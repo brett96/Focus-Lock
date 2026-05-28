@@ -5,7 +5,16 @@
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
       mc:Ignorable="d"
       Background="#1E1E2E"
-      d:DesignHeight="600" d:DesignWidth="900">
+      d:DesignHeight="700" d:DesignWidth="900">
+
+    <Page.Resources>
+        <Style x:Key="UsageProgressBar" TargetType="ProgressBar">
+            <Setter Property="Height" Value="8"/>
+            <Setter Property="Foreground" Value="#89B4FA"/>
+            <Setter Property="Background" Value="#45475A"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+    </Page.Resources>
 
     <Grid Margin="40">
         <Grid.RowDefinitions>
@@ -15,7 +24,7 @@
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <Grid Grid.Row="0" Margin="0,0,0,30">
+        <Grid Grid.Row="0" Margin="0,0,0,16">
             <StackPanel HorizontalAlignment="Center">
                 <TextBlock Text="Focus Lock" FontSize="32" FontWeight="Bold"
                            Foreground="#CDD6F4" HorizontalAlignment="Center"/>
@@ -30,58 +39,157 @@
             </StackPanel>
         </Grid>
 
-        <!-- Status area -->
-        <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+        <!-- Main content -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel VerticalAlignment="Top" HorizontalAlignment="Center" MaxWidth="640">
 
-            <!-- Idle state -->
-            <StackPanel x:Name="IdlePanel"
-                        Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}}">
-                <TextBlock Text="No Active Session" FontSize="22" Foreground="#A6ADC8"
-                           HorizontalAlignment="Center" Margin="0,0,0,8"/>
-                <TextBlock Text="Start a session to block distracting apps and websites."
-                           FontSize="13" Foreground="#6C7086" HorizontalAlignment="Center"
-                           TextWrapping="Wrap" TextAlignment="Center" MaxWidth="350"/>
-            </StackPanel>
+                <!-- Idle state -->
+                <StackPanel Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}}"
+                            VerticalAlignment="Center" Margin="0,40,0,0">
+                    <TextBlock Text="No Active Session" FontSize="22" Foreground="#A6ADC8"
+                               HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                    <TextBlock Text="Start a session to block distracting apps and websites."
+                               FontSize="13" Foreground="#6C7086" HorizontalAlignment="Center"
+                               TextWrapping="Wrap" TextAlignment="Center" MaxWidth="350"/>
+                </StackPanel>
 
-            <!-- Active state -->
-            <StackPanel Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}">
-                <TextBlock Text="Session Active" FontSize="18" Foreground="#A6E3A1"
-                           HorizontalAlignment="Center" Margin="0,0,0,6"/>
-                <TextBlock Text="{Binding TimeRemaining}" FontSize="56" FontWeight="Bold"
-                           Foreground="#CDD6F4" HorizontalAlignment="Center"
-                           FontFamily="Consolas"/>
-                <TextBlock Text="{Binding DeadlineText, StringFormat='Ends {0}'}"
-                           FontSize="13" Foreground="#6C7086" HorizontalAlignment="Center"
-                           Margin="0,8,0,0"/>
+                <!-- Active state -->
+                <StackPanel Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="Session Active" FontSize="18" Foreground="#A6E3A1"
+                               HorizontalAlignment="Center" Margin="0,0,0,6"/>
+                    <TextBlock Text="{Binding TimeRemaining}" FontSize="48" FontWeight="Bold"
+                               Foreground="#CDD6F4" HorizontalAlignment="Center" FontFamily="Consolas"/>
+                    <TextBlock Text="{Binding DeadlineText, StringFormat='Ends {0}'}"
+                               FontSize="13" Foreground="#6C7086" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                    <Border Background="{Binding ModeColor}" CornerRadius="12"
+                            HorizontalAlignment="Center" Padding="12,4" Margin="0,12,0,0">
+                        <TextBlock Text="{Binding ModeLabel}" Foreground="White" FontSize="12" FontWeight="SemiBold"/>
+                    </Border>
+                    <TextBlock Text="Strict mode — cannot end early"
+                               Foreground="#F38BA8" FontSize="13" HorizontalAlignment="Center"
+                               Margin="0,12,0,0"
+                               Visibility="{Binding IsStrictMode, Converter={StaticResource BoolToVisibility}}"/>
 
-                <!-- Mode badge -->
-                <Border Background="{Binding ModeColor}" CornerRadius="12"
-                        HorizontalAlignment="Center" Padding="12,4" Margin="0,16,0,0">
-                    <TextBlock Text="{Binding ModeLabel}" Foreground="White" FontSize="12" FontWeight="SemiBold"/>
+                    <!-- Screen time limits -->
+                    <StackPanel Visibility="{Binding HasScreenTime, Converter={StaticResource BoolToVisibility}}"
+                                Margin="0,28,0,0" Width="560">
+                        <TextBlock Text="SCREEN TIME LIMITS" FontSize="11" FontWeight="Bold"
+                                   Foreground="#6C7086" Margin="0,0,0,10"/>
+
+                        <Border Background="#313244" CornerRadius="8" Padding="14,12" Margin="0,0,0,8"
+                                Visibility="{Binding ShowDailyLimit, Converter={StaticResource BoolToVisibility}}">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,6">
+                                    <TextBlock Text="Daily total" Foreground="#CDD6F4" FontSize="14" FontWeight="SemiBold"/>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <TextBlock Text="{Binding DailyUsageText}" Foreground="#89B4FA"
+                                                   FontSize="13" FontFamily="Consolas"/>
+                                        <TextBlock Text="{Binding DailyLimitLabel}" Foreground="#6C7086"
+                                                   FontSize="13" Margin="6,0,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                                <ProgressBar Value="{Binding DailyProgress}" Maximum="1"
+                                             Style="{StaticResource UsageProgressBar}"/>
+                                <TextBlock Text="{Binding DailyRemainingText}" Foreground="#A6ADC8"
+                                           FontSize="12" Margin="0,6,0,0" HorizontalAlignment="Right"
+                                           FontFamily="Consolas"/>
+                                <TextBlock Text="Daily limit reached for this session."
+                                           Foreground="#F38BA8" FontSize="12" Margin="0,6,0,0"
+                                           Visibility="{Binding IsDailyLockedOut, Converter={StaticResource BoolToVisibility}}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <ItemsControl ItemsSource="{Binding AppUsages}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#313244" CornerRadius="8" Padding="14,12" Margin="0,0,0,8">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,6">
+                                                <TextBlock Text="{Binding DisplayName}" Foreground="#CDD6F4"
+                                                           FontSize="14" FontWeight="SemiBold"/>
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                    <TextBlock Text="{Binding UsageText}" Foreground="#89B4FA"
+                                                               FontSize="13" FontFamily="Consolas"/>
+                                                    <TextBlock Text="{Binding LimitLabel}" Foreground="#6C7086"
+                                                               FontSize="13" Margin="6,0,0,0"/>
+                                                    <TextBlock Text=" · BLOCKED" Foreground="#F38BA8"
+                                                               FontSize="11" FontWeight="Bold"
+                                                               Visibility="{Binding IsBlocked, Converter={StaticResource BoolToVisibility}}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <ProgressBar Value="{Binding Progress}" Maximum="1"
+                                                         Style="{StaticResource UsageProgressBar}"/>
+                                            <TextBlock Text="{Binding RemainingText}" Foreground="#A6ADC8"
+                                                       FontSize="12" Margin="0,6,0,0" HorizontalAlignment="Right"
+                                                       FontFamily="Consolas"/>
+                                            <TextBlock Text="{Binding IntervalResetText}" Foreground="#89B4FA"
+                                                       FontSize="12" Margin="0,4,0,0" HorizontalAlignment="Right"
+                                                       FontFamily="Consolas"
+                                                       Visibility="{Binding ShowIntervalReset, Converter={StaticResource BoolToVisibility}}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Session blocks -->
+                    <StackPanel Visibility="{Binding HasSessionBlocks, Converter={StaticResource BoolToVisibility}}"
+                                Margin="0,24,0,0" Width="560">
+                        <TextBlock Text="SESSION BLOCKS" FontSize="11" FontWeight="Bold"
+                                   Foreground="#6C7086" Margin="0,0,0,10"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition/>
+                                <ColumnDefinition/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                <TextBlock Text="Blocked apps" FontSize="12" Foreground="#A6ADC8" Margin="0,0,0,6"/>
+                                <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding BlockedApps}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="#313244" CornerRadius="6" Padding="10,6" Margin="0,0,0,4">
+                                                    <TextBlock Text="{Binding DisplayName}" Foreground="#CDD6F4" FontSize="13"/>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                <TextBlock Text="Blocked sites" FontSize="12" Foreground="#A6ADC8" Margin="0,0,0,6"/>
+                                <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding BlockedSites}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="#313244" CornerRadius="6" Padding="10,6" Margin="0,0,0,4">
+                                                    <TextBlock Text="{Binding Domain}" Foreground="#CDD6F4" FontSize="13"/>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Service unreachable -->
+                <Border Background="#45475A" CornerRadius="8" Padding="16,10" Margin="0,20,0,0"
+                        Visibility="{Binding IsServiceUnreachable, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="⚠ Cannot reach Focus Lock Service. Make sure it is installed and running."
+                               Foreground="#FAB387" TextWrapping="Wrap" TextAlignment="Center"/>
                 </Border>
-
-                <!-- Strict lock message -->
-                <TextBlock Text="Strict mode — cannot end early"
-                           Foreground="#F38BA8" FontSize="13" HorizontalAlignment="Center"
-                           Margin="0,16,0,0"
-                           Visibility="{Binding IsStrictMode, Converter={StaticResource BoolToVisibility}}"/>
             </StackPanel>
-
-            <!-- Service unreachable warning -->
-            <Border Background="#45475A" CornerRadius="8" Padding="16,10" Margin="0,20,0,0"
-                    Visibility="{Binding IsServiceUnreachable, Converter={StaticResource BoolToVisibility}}">
-                <TextBlock Text="⚠ Cannot reach Focus Lock Service. Make sure it is installed and running."
-                           Foreground="#FAB387" TextWrapping="Wrap" TextAlignment="Center"/>
-            </Border>
-        </StackPanel>
+        </ScrollViewer>
 
         <!-- Action buttons -->
-        <StackPanel Grid.Row="2" HorizontalAlignment="Center" Orientation="Horizontal">
+        <StackPanel Grid.Row="2" HorizontalAlignment="Center" Orientation="Horizontal" Margin="0,16,0,0">
             <Button Content="New Focus Session"
                     Command="{Binding StartNewCommand}"
                     Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}}"
                     Style="{StaticResource PrimaryButton}"/>
-
             <Button Content="End Session Early"
                     Command="{Binding EndSessionCommand}"
                     Visibility="{Binding CanEndEarly, Converter={StaticResource BoolToVisibility}}"

@@ -89,12 +89,14 @@ if ($null -ne $signTool) {
     Write-Host "    WARNING: signtool.exe not found. Skipping code signing." -ForegroundColor Yellow
 }
 
-function SignFiles([string[]]$paths) {
+function SignFiles([string[]]$paths, [string]$description = "Focus Lock") {
     if ($null -eq $signingCert -or $null -eq $signTool) { return }
     foreach ($path in $paths) {
         if (-not (Test-Path $path)) { continue }
-        & $signTool sign /sha1 $signingCert.Thumbprint /fd SHA256 /q $path
-        if ($LASTEXITCODE -eq 0) { Ok "Signed: $(Split-Path $path -Leaf)" }
+        # /d sets the friendly name shown in the UAC elevation prompt (otherwise Windows
+        # shows the random temp MSI name msiexec copies to C:\Windows\Installer\).
+        & $signTool sign /sha1 $signingCert.Thumbprint /fd SHA256 /d $description /q $path
+        if ($LASTEXITCODE -eq 0) { Ok "Signed: $(Split-Path $path -Leaf) ($description)" }
         else { Write-Host "    WARNING: Could not sign $(Split-Path $path -Leaf)" -ForegroundColor Yellow }
     }
 }
@@ -127,8 +129,8 @@ if ($null -eq $msi) { Fail "MSI not found after build." }
 Ok "Installer ready:"
 Write-Host "    $($msi.FullName)" -ForegroundColor Yellow
 
-# Sign the MSI
-SignFiles @($msi.FullName)
+# Sign the MSI (description appears on the UAC prompt instead of a random .msi name)
+SignFiles @($msi.FullName) "Focus Lock"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 $size = [math]::Round($msi.Length / 1MB, 2)

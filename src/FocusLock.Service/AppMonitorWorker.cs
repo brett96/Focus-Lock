@@ -31,6 +31,7 @@ public class AppMonitorWorker : BackgroundService
                     {
                         _manager.AppBlocker.KillRunningBlockedApps(s);
                         _manager.AppBlocker.VerifyAndRepairIfeo(s);
+                        _manager.ScreenTime.VerifyScreenTimeIfeo();
                     }
                 }
                 finally { _manager.SessionLock.Release(); }

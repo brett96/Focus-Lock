@@ -19,7 +19,7 @@ public partial class App : Application
         var services = new ServiceCollection();
         services.AddSingleton<ServiceClient>();
         services.AddSingleton<NavigationService>();
-        services.AddTransient<DashboardViewModel>();
+        services.AddSingleton<DashboardViewModel>();
         services.AddTransient<SetupViewModel>();
         services.AddTransient<ActiveSessionViewModel>();
         services.AddTransient<SettingsViewModel>();

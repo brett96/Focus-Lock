@@ -3,6 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:controls="clr-namespace:FocusLock.UI.Controls"
       mc:Ignorable="d"
       Background="#1E1E2E"
       d:DesignHeight="700" d:DesignWidth="900">
@@ -151,6 +152,8 @@
                             <TextBlock Text="min per day" Foreground="#A6ADC8" FontSize="13"
                                        VerticalAlignment="Center" Margin="4,0,0,0"/>
                         </StackPanel>
+                        <TextBlock Text="Minimum 5 minutes per day (device-wide limit only)."
+                                   Foreground="#6C7086" FontSize="12" Margin="0,0,0,10"/>
 
                         <!-- Schedule toggle -->
                         <CheckBox Content="Active during a set schedule:"
@@ -170,13 +173,11 @@
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="From" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
-                                    <TextBox Text="{Binding GlobalStartHour, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
-                                </Border>
+                                <controls:TimePartSpinBox Value="{Binding GlobalStartHour, UpdateSourceTrigger=PropertyChanged}"
+                                                          Part="{x:Static controls:TimePartKind.Hour12}" Width="40"/>
                                 <TextBlock Text=":" Foreground="#CDD6F4" FontSize="16" VerticalAlignment="Center" Margin="4,0"/>
-                                <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
-                                    <TextBox Text="{Binding GlobalStartMinute, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
-                                </Border>
+                                <controls:TimePartSpinBox Value="{Binding GlobalStartMinute, UpdateSourceTrigger=PropertyChanged}"
+                                                          Part="{x:Static controls:TimePartKind.Minute}" Width="40"/>
                                 <Border Background="#3D3F55" BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Margin="6,0">
                                     <StackPanel Orientation="Horizontal">
                                         <RadioButton Content="AM" IsChecked="{Binding GlobalStartIsAm, Mode=TwoWay}" GroupName="GS_AmPm" Style="{StaticResource AmPmButton}"/>
@@ -184,13 +185,11 @@
                                     </StackPanel>
                                 </Border>
                                 <TextBlock Text="to" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
-                                    <TextBox Text="{Binding GlobalEndHour, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
-                                </Border>
+                                <controls:TimePartSpinBox Value="{Binding GlobalEndHour, UpdateSourceTrigger=PropertyChanged}"
+                                                          Part="{x:Static controls:TimePartKind.Hour12}" Width="40"/>
                                 <TextBlock Text=":" Foreground="#CDD6F4" FontSize="16" VerticalAlignment="Center" Margin="4,0"/>
-                                <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
-                                    <TextBox Text="{Binding GlobalEndMinute, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
-                                </Border>
+                                <controls:TimePartSpinBox Value="{Binding GlobalEndMinute, UpdateSourceTrigger=PropertyChanged}"
+                                                          Part="{x:Static controls:TimePartKind.Minute}" Width="40"/>
                                 <Border Background="#3D3F55" BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Margin="6,0,0,0">
                                     <StackPanel Orientation="Horizontal">
                                         <RadioButton Content="AM" IsChecked="{Binding GlobalEndIsAm, Mode=TwoWay}" GroupName="GE_AmPm" Style="{StaticResource AmPmButton}"/>
@@ -391,13 +390,11 @@
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock Text="From" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
-                                <TextBox Text="{Binding DraftStartHour, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
-                            </Border>
+                            <controls:TimePartSpinBox Value="{Binding DraftStartHour, UpdateSourceTrigger=PropertyChanged}"
+                                                      Part="{x:Static controls:TimePartKind.Hour12}" Width="40"/>
                             <TextBlock Text=":" Foreground="#CDD6F4" FontSize="16" VerticalAlignment="Center" Margin="4,0"/>
-                            <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
-                                <TextBox Text="{Binding DraftStartMinute, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
-                            </Border>
+                            <controls:TimePartSpinBox Value="{Binding DraftStartMinute, UpdateSourceTrigger=PropertyChanged}"
+                                                      Part="{x:Static controls:TimePartKind.Minute}" Width="40"/>
                             <Border Background="#3D3F55" BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Margin="6,0">
                                 <StackPanel Orientation="Horizontal">
                                     <RadioButton Content="AM" IsChecked="{Binding DraftStartIsAm, Mode=TwoWay}" GroupName="DS_AmPm" Style="{StaticResource AmPmButton}"/>
@@ -405,13 +402,11 @@
                                 </StackPanel>
                             </Border>
                             <TextBlock Text="to" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
-                                <TextBox Text="{Binding DraftEndHour, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
-                            </Border>
+                            <controls:TimePartSpinBox Value="{Binding DraftEndHour, UpdateSourceTrigger=PropertyChanged}"
+                                                      Part="{x:Static controls:TimePartKind.Hour12}" Width="40"/>
                             <TextBlock Text=":" Foreground="#CDD6F4" FontSize="16" VerticalAlignment="Center" Margin="4,0"/>
-                            <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
-                                <TextBox Text="{Binding DraftEndMinute, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
-                            </Border>
+                            <controls:TimePartSpinBox Value="{Binding DraftEndMinute, UpdateSourceTrigger=PropertyChanged}"
+                                                      Part="{x:Static controls:TimePartKind.Minute}" Width="40"/>
                             <Border Background="#3D3F55" BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Margin="6,0,0,0">
                                 <StackPanel Orientation="Horizontal">
                                     <RadioButton Content="AM" IsChecked="{Binding DraftEndIsAm, Mode=TwoWay}" GroupName="DE_AmPm" Style="{StaticResource AmPmButton}"/>

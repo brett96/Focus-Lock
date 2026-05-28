@@ -21,15 +21,27 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
     2. **IFEO registry ACLs** — each Image File Execution Options key written for the session gets a deny-write ACL for `Administrators`, preventing manual deletion or modification. The service (running as LocalSystem) can still repair keys via the monitor loop.
     3. **Hosts file ACL** — the hosts file gets a deny-write ACL for `Administrators`, preventing the sentinel block from being manually removed. The service retains full control so it can restore the file on session end.
   - The user keeps their admin rights for all other purposes — no risk of being locked out of their own machine.
-- **Screen Time Limits** *(optional, independent of Focus Lock sessions)*
-  - **Daily screen time limit** — set a maximum number of minutes the user can be logged into Windows per day. When the limit is reached the service disconnects the active session; every subsequent login for the rest of the day is disconnected after a 5-second notification, then resets at midnight.
-  - **Schedule-based activation** — limits can be restricted to specific days of the week and/or a time-of-day window (e.g. Monday–Friday 9 AM–5 PM). Outside the schedule the limits are inactive and no enforcement occurs.
-  - **Per-app time limits** — each app can have its own independent limit and schedule, with two enforcement modes:
-    - *Daily Total*: the app may be used for at most X minutes within the schedule window each day. Once the quota is used the app is force-closed for the remainder of that window; it is unlocked automatically when the schedule ends (e.g. blocked at 2 PM under a 9 AM–5 PM schedule → unlocked at 5 PM; counter resets the next day).
-    - *Interval*: the app may be used for at most X minutes per Y-minute interval, measured from the schedule start. When the quota for an interval is exhausted the app is force-closed until the next interval begins.
-  - Each app limit can optionally override the global schedule with its own custom days/hours.
-  - Configuration is saved to `C:\ProgramData\FocusLock\screen-time-config.json`; daily usage counters are saved to `screen-time-state.json` and reset automatically at midnight.
-  - Screen Time is configured via the **⏱** button on the dashboard.
+- **Screen Time Limits** *(optional; enforced only during an active Focus Lock session)*
+  - Limits are configured in the **New Focus Session** wizard (or saved ahead of time) and **only apply while a focus session is running** — same lifecycle as app/website blocking. When the session ends, counters reset and enforcement stops.
+  - **Daily screen time limit** — maximum logged-in time during the session. When reached, the service disconnects the Windows session after a 5-second notification.
+  - **Schedule-based activation** — limits can be restricted to specific days of the week and/or a time-of-day window (e.g. Monday–Friday 9 AM–5 PM). Outside the schedule window, limits do not accumulate or enforce.
+  - **Per-app time limits** — each app can have its own limit and schedule:
+    - *Daily Total*: at most X minutes of use within the schedule window during the session.
+    - *Interval*: at most X minutes per Y-minute interval within the schedule window.
+  - **Website categories** — block preset groups of sites (Adult, Entertainment, Social, etc.) from the session setup screen.
+  - Configuration persists in `C:\ProgramData\FocusLock\screen-time-config.json`. Usage counters are session-scoped (reset when a session starts and cleared when it ends).
+  - During an active session, the **dashboard** shows live countdowns for the session deadline, screen-time usage, remaining quota per limit, interval-reset times for interval-based app limits, and scrollable lists of blocked apps/sites.
+  - When a screen-time-limited app is blocked, or a site is blocked over HTTP, the user gets a **native notification** (via `BlockerStub` and `IsBlockedResponse.BlockMessage`).
+- **Session setup (New Focus Session wizard)**
+  - Default end time is **one hour from now** (editable with date picker + `TimePartSpinBox` hour/minute spinners).
+  - End date must be **at least 5 minutes** in the future and **no more than one year** ahead (enforced in UI and service).
+  - **Blocked apps and websites are optional** if you enable a daily screen-time limit and/or add per-app time limits.
+  - **Website categories** — preset domain groups (Adult, Entertainment, Social, etc.) can be toggled on the setup screen.
+  - At least one restriction is required to start: blocked apps, blocked sites, or screen time limits.
+- **Dashboard UX**
+  - Main active-session view is `DashboardPage` (not `ActiveSessionPage`).
+  - **End Session Early** (regular mode only) shows a Yes/No confirmation before ending.
+  - No “Loading session…” overlay — idle/active panels stay stable while status refreshes in the background.
 
 ## Tech stack
 
@@ -50,7 +62,7 @@ src/
   FocusLock.UI/           WPF app (requires admin to run meaningfully)
   FocusLock.BlockerStub/  Small WinForms exe invoked by IFEO
 installer/
-  FocusLock.Installer/    WiX project producing FocusLockSetup.msi
+  FocusLock.Installer/    WiX project producing Focus Lock.msi
 tests/
   FocusLock.Core.Tests/
   FocusLock.Service.Tests/
@@ -64,7 +76,7 @@ Key data files written by the service to `C:\ProgramData\FocusLock\`:
 |---|---|
 | `session.json` | Active Focus Lock session (apps/sites blocked, deadline, mode) |
 | `screen-time-config.json` | Screen Time limit configuration (persists across days) |
-| `screen-time-state.json` | Today's usage counters; reset automatically at midnight |
+| `screen-time-state.json` | Session usage counters (written during active sessions; cleared on session end) |
 
 ## How it’s built (high-level architecture)
 
@@ -81,9 +93,9 @@ The wire framing is **4-byte little-endian length prefix + UTF-8 JSON**, impleme
 The service runs four loops concurrently:
 
 - **Pipe server**: handles UI/stub requests
-- **Monitor loop**: kills blocked processes and repairs IFEO keys
-- **Deadline watcher**: ends the session automatically when the deadline is reached
-- **Screen Time tracker**: 1-second tick loop that accumulates user session time, enforces daily limits (via `WTSDisconnectSession`), and force-closes apps that have exceeded their daily or interval quota
+- **App monitor** (`AppMonitorWorker`): kills blocked processes, repairs IFEO keys, verifies screen-time IFEO
+- **Deadline watcher** (`DeadlineWatcherWorker`): ends the session automatically when the deadline is reached
+- **Screen Time tracker** (`ScreenTimeManager`): 1-second tick loop (active only while a focus session is running) that accumulates usage, enforces daily limits (via `WTSDisconnectSession`), and applies per-app IFEO blocks when quotas are exceeded
 
 ### Blocker stub (IFEO target)
 
@@ -126,7 +138,8 @@ dotnet test --filter "FullyQualifiedName~MyTestName"
 `build.ps1` does three things in order:
 1. Publishes `FocusLock.UI`, `FocusLock.BlockerStub`, and `FocusLock.Service` to `publish\FocusLock\`
 2. Moves `FocusLock.Service.exe` to `publish\service-exe\` (required so WiX can attach `ServiceInstall` without a glob conflict)
-3. Builds the WiX installer → `installer\FocusLock.Installer\bin\Release\FocusLockSetup.msi`
+3. Builds the WiX installer → `installer\FocusLock.Installer\bin\Release\Focus Lock.msi`
+4. **Code-signs** published executables and the MSI when `signtool` and a signing cert are available (`build.ps1` creates/trusts a dev self-signed cert). The MSI is signed with `/d "Focus Lock"` so the UAC prompt shows that name instead of a random cached filename under `C:\Windows\Installer\`.
 
 Debug variant:
 
@@ -163,7 +176,7 @@ Then reinstall the updated MSI to pick up the changes in the installed applicati
 To test the full stack (UI + service enforcing blocks):
 
 1. Run `.\build\build.ps1` to produce a fresh MSI.
-2. Install `installer\FocusLock.Installer\bin\Release\FocusLockSetup.msi`.
+2. Install `installer\FocusLock.Installer\bin\Release\Focus Lock.msi`.
    - This installs everything to `C:\Program Files\FocusLock\` and starts the service automatically.
    - The source code directory is **not needed** after installation.
 3. Launch **Focus Lock** from the Start menu (UAC prompt expected).
@@ -171,7 +184,7 @@ To test the full stack (UI + service enforcing blocks):
 
 ### The MSI is the standalone distributable
 
-`FocusLockSetup.msi` is a self-contained installer — it bundles all executables and DLLs. The only external prerequisite is the **.NET 9 Desktop Runtime**, which must be installed on the target machine before running the MSI. The installer will show an error and abort if the runtime is not present.
+`Focus Lock.msi` is a self-contained installer — it bundles all executables and DLLs. The only external prerequisite is the **.NET 9 Desktop Runtime**, which must be installed on the target machine before running the MSI. The installer will show an error and abort if the runtime is not present.
 
 ## Operational notes / safety
 

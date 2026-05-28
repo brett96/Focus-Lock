@@ -93,5 +93,5 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Back() => _nav.NavigateTo(new DashboardPage());
+    private void Back() => _nav.NavigateToDashboard();
 }

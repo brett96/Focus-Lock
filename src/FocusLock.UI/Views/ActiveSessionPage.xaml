@@ -5,7 +5,16 @@
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
       mc:Ignorable="d"
       Background="#1E1E2E"
-      d:DesignHeight="600" d:DesignWidth="900">
+      d:DesignHeight="700" d:DesignWidth="900">
+
+    <Page.Resources>
+        <Style x:Key="UsageProgressBar" TargetType="ProgressBar">
+            <Setter Property="Height" Value="8"/>
+            <Setter Property="Foreground" Value="#89B4FA"/>
+            <Setter Property="Background" Value="#45475A"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+    </Page.Resources>
 
     <Grid Margin="40">
         <Grid.RowDefinitions>
@@ -14,26 +23,88 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="Focus Session Active" FontSize="28" FontWeight="Bold"
-                   Foreground="#A6E3A1" Margin="0,0,0,24"/>
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="Focus Session Active" FontSize="28" FontWeight="Bold"
+                       Foreground="#A6E3A1" Margin="0,0,0,8"/>
+            <TextBlock Text="{Binding TimeRemaining}" FontSize="52" FontWeight="Bold"
+                       Foreground="#CDD6F4" HorizontalAlignment="Center" FontFamily="Consolas"/>
+            <TextBlock Text="{Binding DeadlineText, StringFormat='Ends {0}'}"
+                       FontSize="14" Foreground="#6C7086" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+        </StackPanel>
 
-        <ScrollViewer Grid.Row="1">
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel>
-                <TextBlock Text="{Binding TimeRemaining}" FontSize="64" FontWeight="Bold"
-                           Foreground="#CDD6F4" HorizontalAlignment="Center" FontFamily="Consolas"/>
-                <TextBlock Text="{Binding DeadlineText, StringFormat='Ends {0}'}"
-                           FontSize="14" Foreground="#6C7086" HorizontalAlignment="Center" Margin="0,8,0,32"/>
 
+                <!-- Screen time -->
+                <StackPanel Visibility="{Binding HasScreenTime, Converter={StaticResource BoolToVisibility}}"
+                            Margin="0,0,0,24">
+                    <TextBlock Text="SCREEN TIME TODAY" FontSize="11" FontWeight="Bold"
+                               Foreground="#6C7086" Margin="0,0,0,10"/>
+
+                    <Border Background="#313244" CornerRadius="8" Padding="16,14" Margin="0,0,0,10"
+                            Visibility="{Binding ShowDailyLimit, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,8">
+                                <TextBlock Text="Daily total" Foreground="#CDD6F4" FontSize="14" FontWeight="SemiBold"/>
+                                <TextBlock HorizontalAlignment="Right" Foreground="#A6ADC8" FontSize="13">
+                                    <Run Text="{Binding DailyUsageText, Mode=OneWay}"/>
+                                    <Run Text=" "/>
+                                    <Run Text="{Binding DailyLimitLabel, Mode=OneWay}"/>
+                                </TextBlock>
+                            </Grid>
+                            <ProgressBar Value="{Binding DailyProgress}" Maximum="1"
+                                         Style="{StaticResource UsageProgressBar}"/>
+                            <TextBlock Text="Daily limit reached — locked out until tomorrow."
+                                       Foreground="#F38BA8" FontSize="12" Margin="0,8,0,0"
+                                       Visibility="{Binding IsDailyLockedOut, Converter={StaticResource BoolToVisibility}}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <ItemsControl ItemsSource="{Binding AppUsages}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="#313244" CornerRadius="8" Padding="14,12" Margin="0,0,0,8">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,6">
+                                            <TextBlock Text="{Binding DisplayName}" Foreground="#CDD6F4"
+                                                       FontSize="14" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <TextBlock Text="{Binding UsageText}" Foreground="#89B4FA"
+                                                           FontSize="13" FontFamily="Consolas"/>
+                                                <TextBlock Text="{Binding LimitLabel}" Foreground="#6C7086"
+                                                           FontSize="13" Margin="6,0,0,0"/>
+                                                <TextBlock Text=" · BLOCKED" Foreground="#F38BA8"
+                                                           FontSize="11" FontWeight="Bold"
+                                                           Visibility="{Binding IsBlocked, Converter={StaticResource BoolToVisibility}}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                        <ProgressBar Value="{Binding Progress}" Maximum="1"
+                                                     Style="{StaticResource UsageProgressBar}"/>
+                                        <TextBlock Text="{Binding RemainingText}" Foreground="#A6ADC8"
+                                                   FontSize="12" Margin="0,6,0,0" HorizontalAlignment="Right"
+                                                   FontFamily="Consolas"/>
+                                        <TextBlock Text="{Binding IntervalResetText}" Foreground="#89B4FA"
+                                                   FontSize="12" Margin="0,4,0,0" HorizontalAlignment="Right"
+                                                   FontFamily="Consolas"
+                                                   Visibility="{Binding ShowIntervalReset, Converter={StaticResource BoolToVisibility}}"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- Session blocks -->
+                <TextBlock Text="SESSION BLOCKS" FontSize="11" FontWeight="Bold"
+                           Foreground="#6C7086" Margin="0,0,0,10"/>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition/>
                         <ColumnDefinition/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Blocked apps -->
-                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                        <TextBlock Text="BLOCKED APPS" FontSize="11" FontWeight="Bold"
-                                   Foreground="#6C7086" Margin="0,0,0,8"/>
+                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                        <TextBlock Text="Apps" FontSize="12" Foreground="#A6ADC8" Margin="0,0,0,6"/>
                         <ItemsControl ItemsSource="{Binding BlockedApps}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -45,10 +116,8 @@
                         </ItemsControl>
                     </StackPanel>
 
-                    <!-- Blocked sites -->
                     <StackPanel Grid.Column="1">
-                        <TextBlock Text="BLOCKED SITES" FontSize="11" FontWeight="Bold"
-                                   Foreground="#6C7086" Margin="0,0,0,8"/>
+                        <TextBlock Text="Sites" FontSize="12" Foreground="#A6ADC8" Margin="0,0,0,6"/>
                         <ItemsControl ItemsSource="{Binding BlockedSites}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -63,13 +132,13 @@
             </StackPanel>
         </ScrollViewer>
 
-        <StackPanel Grid.Row="2">
+        <StackPanel Grid.Row="2" Margin="0,16,0,0">
             <Button Content="End Session Early"
                     Command="{Binding EndSessionCommand}"
                     Visibility="{Binding CanEndEarly, Converter={StaticResource BoolToVisibility}}"
                     Style="{StaticResource DangerButton}" HorizontalAlignment="Center"/>
             <TextBlock Text="Strict mode — session is locked until the deadline."
-                       Foreground="#F38BA8" FontSize="13" HorizontalAlignment="Center"
+                       Foreground="#F38BA8" FontSize="13" HorizontalAlignment="Center" Margin="0,8,0,0"
                        Visibility="{Binding IsStrictActive, Converter={StaticResource BoolToVisibility}}"/>
         </StackPanel>
     </Grid>

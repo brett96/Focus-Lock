@@ -37,7 +37,7 @@ public class SessionManager
         _websiteBlocker  = new WebsiteBlocker(log);
         _strictMode      = new StrictModeManager(log);
         _blockPageServer = new BlockPageServer(log, new SessionNotifier(log));
-        _screenTime      = new ScreenTimeManager(log);
+        _screenTime      = new ScreenTimeManager(log, _appBlocker, () => _session);
     }
 
     // ── Initialization ────────────────────────────────────────────────────────
@@ -92,6 +92,8 @@ public class SessionManager
             _appBlocker.LockIfeoAcls(_session);
             _websiteBlocker.LockHostsAcl(_session);
         }
+
+        _screenTime.OnSessionStarted();
     }
 
     // ── Handlers ──────────────────────────────────────────────────────────────
@@ -123,6 +125,8 @@ public class SessionManager
         if (req is null) return new AckResponse(false, "Invalid request payload.");
         if (req.DeadlineUtc <= DateTime.UtcNow.AddMinutes(1))
             return new AckResponse(false, "Deadline must be at least 1 minute in the future.");
+        if (req.DeadlineUtc > DateTime.UtcNow.AddYears(1))
+            return new AckResponse(false, "Deadline cannot be more than one year in the future.");
         if (req.Mode == SessionMode.Strict && !req.ConsentGiven)
             return new AckResponse(false, "Consent required for Strict mode.");
 
@@ -161,6 +165,7 @@ public class SessionManager
 
             SessionRepository.Save(session);
             _session = session;
+            _screenTime.OnSessionStarted();
 
             _log.LogInformation("Session {Id} started ({Mode}, expires {Deadline:u}).",
                 session.Id, session.Mode, session.DeadlineUtc);
@@ -197,11 +202,19 @@ public class SessionManager
         if (req is null || _session is null || _session.Status != SessionStatus.Active)
             return new IsBlockedResponse(false, null, null);
 
+        var screenTimeBlock = _screenTime.GetLaunchBlockResponse(req.ExeName);
+        if (screenTimeBlock is not null)
+            return screenTimeBlock;
+
         var match = _session.BlockedApps.FirstOrDefault(a =>
             string.Equals(a.ExeName, req.ExeName, StringComparison.OrdinalIgnoreCase));
 
         return match is not null
-            ? new IsBlockedResponse(true, _session.DeadlineUtc, match.DisplayName)
+            ? new IsBlockedResponse(
+                true,
+                _session.DeadlineUtc,
+                match.DisplayName,
+                $"{match.DisplayName} is blocked until {_session.DeadlineUtc.ToLocalTime():h:mm tt} during this focus session.")
             : new IsBlockedResponse(false, null, null);
     }
 
@@ -257,5 +270,6 @@ public class SessionManager
         session.Status = SessionStatus.Idle;
         SessionRepository.Save(null);
         _session = null;
+        _screenTime.OnSessionEnded();
     }
 }

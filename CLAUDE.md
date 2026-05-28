@@ -9,7 +9,7 @@ dotnet build FocusLock.sln           # build everything (src + tests; installer 
 dotnet test                          # run all tests
 dotnet test --filter "FullyQualifiedName~TestName"  # single test
 
-# Full release build → produces FocusLockSetup.msi
+# Full release build → produces Focus Lock.msi
 .\build\build.ps1                    # publishes all three apps then builds the installer
 .\build\build.ps1 -Configuration Debug
 
@@ -24,7 +24,8 @@ The UI and Service require Windows and admin rights to run meaningfully. The Ser
 `build/build.ps1` orchestrates the full pipeline:
 1. Publishes UI + BlockerStub + Service to `publish/FocusLock/`
 2. Moves `FocusLock.Service.exe` to `publish/service-exe/` (required so WiX can attach `ServiceInstall` without a glob conflict)
-3. Builds `installer/FocusLock.Installer/` → `FocusLockSetup.msi`
+3. Builds `installer/FocusLock.Installer/` → `Focus Lock.msi` (`OutputName`: `Focus Lock`)
+4. Signs published binaries + MSI when `signtool` is available; MSI uses `/d "Focus Lock"` for the UAC-friendly description (unsigned MSIs still show random `C:\Windows\Installer\` names)
 
 The installer requires .NET 9 Desktop Runtime on the target machine (enforced via `<Launch>` in Package.wxs).  
 WiX SDK: `WixToolset.Sdk/5.0.2` (pulled via NuGet — no separate WiX install needed).
@@ -39,7 +40,7 @@ FocusLock.sln
 ├── src/FocusLock.Service/       net9.0-windows — Windows Service (runs as SYSTEM)
 ├── src/FocusLock.UI/            net9.0-windows — WPF app (requireAdministrator UAC)
 ├── src/FocusLock.BlockerStub/   net9.0-windows — tiny exe called by Windows via IFEO
-├── installer/FocusLock.Installer/  WiX v4 — produces FocusLockSetup.msi
+├── installer/FocusLock.Installer/  WiX v4 — produces Focus Lock.msi
 └── tests/                       xUnit test projects
 ```
 
@@ -55,7 +56,7 @@ FocusLock.sln
 
 **Website blocking**: Appends a sentinel block to `C:\Windows\System32\drivers\etc\hosts` with `0.0.0.0 domain.com` entries, then calls `ipconfig /flushdns`. On session end, restores from a backup file.
 
-**Strict mode**: Creates a hidden local admin account (`FocusLockAdmin`), then demotes all other admin accounts to standard users. The session cannot be ended early. On deadline, the service automatically restores all demoted accounts and deletes `FocusLockAdmin`.
+**Strict mode** (`StrictModeManager`): Cannot end session early from the UI. Enforces via (1) service DACL denying `SERVICE_STOP` / `SERVICE_PAUSE_CONTINUE` to Administrators, (2) deny-write ACLs on IFEO keys, (3) deny-write ACL on the hosts file. Does **not** create/demote local admin accounts.
 
 ### Key files
 
@@ -64,19 +65,26 @@ FocusLock.sln
 | `src/FocusLock.Core/Models/FocusSession.cs` | Central data model — every project depends on it |
 | `src/FocusLock.Core/Ipc/Messages.cs` | All IPC request/response record types |
 | `src/FocusLock.Core/Ipc/PipeFraming.cs` | Length-prefixed JSON wire framing |
-| `src/FocusLock.Service/SessionWorker.cs` | Service entry point: pipe server, monitor loop, deadline watcher |
+| `src/FocusLock.Service/SessionWorker.cs` | Named-pipe IPC server + screen-time loop host |
+| `src/FocusLock.Service/SessionManager.cs` | Session state, start/end handlers, blocking orchestration |
+| `src/FocusLock.Service/ScreenTimeManager.cs` | Screen/app time limits — **only enforced while a session is active** |
+| `src/FocusLock.Service/AppMonitorWorker.cs` | Kills blocked processes, repairs IFEO keys |
+| `src/FocusLock.Service/DeadlineWatcherWorker.cs` | Ends session when deadline is reached |
 | `src/FocusLock.Service/Blocking/AppBlocker.cs` | IFEO writes, process kill, IFEO repair |
 | `src/FocusLock.Service/Blocking/WebsiteBlocker.cs` | Hosts file management |
 | `src/FocusLock.Service/Blocking/StrictModeManager.cs` | Admin account lifecycle (highest-risk code) |
 | `src/FocusLock.Core/Blocking/SystemProcessList.cs` | Shared exclusion list — processes that must never be blocked |
+| `src/FocusLock.Core/Blocking/WebsiteCategories.cs` | Preset domain lists for category blocking on setup |
 | `src/FocusLock.UI/Services/ServiceClient.cs` | UI-side Named Pipe client wrapper |
-| `src/FocusLock.UI/ViewModels/*.cs` | MVVM ViewModels using CommunityToolkit.Mvvm |
+| `src/FocusLock.UI/ViewModels/DashboardViewModel.cs` | Singleton dashboard VM — session countdown, blocks, live screen time |
+| `src/FocusLock.UI/ViewModels/SetupViewModel.cs` | New-session wizard — blocks, categories, screen time, deadline validation |
+| `src/FocusLock.UI/Controls/TimePartSpinBox.xaml` | Hour/minute spinners for deadline and schedule times |
 
 ### IPC message types
 
 All messages use the envelope `PipeMessage(Type, Payload)` where `Payload` is inner JSON. Message type constants are in `PipeConstants`. The service replies with `PipeMessage("Reply", <serialized response>)`.
 
-Types: `GetStatus`, `GetSessionInfo`, `StartSession`, `EndSession`, `IsBlocked`.
+Types: `GetStatus`, `GetSessionInfo`, `StartSession`, `EndSession`, `IsBlocked`, `GetScreenTimeConfig`, `SetScreenTimeConfig`, `GetScreenTimeStatus`, `ForceReset`.
 
 ### Session persistence
 
@@ -84,14 +92,34 @@ Types: `GetStatus`, `GetSessionInfo`, `StartSession`, `EndSession`, `IsBlocked`.
 
 ### Two session modes
 
-- **Regular**: Service enforces blocks; existing admins can still stop the service to end the session (acceptable tradeoff).
-- **Strict**: Service creates `FocusLockAdmin`, demotes all other admins before saving state to disk (crash-safe ordering), and enforces the session until the deadline regardless of user attempts. The service restores accounts automatically on deadline.
+- **Regular**: User can end the session early from the dashboard (with confirmation). Admins can still stop the service via SCM (acceptable tradeoff).
+- **Strict**: Session runs until deadline; UI hides End Session Early. Service/IFEO/hosts ACLs prevent tampering; see `StrictModeManager`.
+
+### Session start rules (UI + service)
+
+Enforced in `SetupViewModel.StartSessionAsync` and `SessionManager.StartSessionAsync`:
+
+- Deadline ≥ 5 minutes ahead (UI) / ≥ 1 minute (service)
+- Deadline ≤ **1 year** ahead
+- Strict mode requires consent checkbox
+- At least one of: blocked apps, blocked sites, or screen time limits (`StEnableDailyLimit` or `StAppLimits`)
+- Device **daily** screen time limit: minimum **5 minutes** (`ScreenTimeConfig.MinDailyLimitMinutes`); per-app limits are unchanged (still ≥ 1 minute)
+
+Default deadline on setup page: **now + 1 hour**. `DatePicker` uses `DisplayDateEnd = Today + 1 year`.
 
 ### UI structure
 
 WPF MVVM app using `CommunityToolkit.Mvvm` (`[ObservableProperty]`, `[RelayCommand]`) and `Microsoft.Extensions.DependencyInjection`. Navigation via `NavigationService` swapping `Page` instances in `MainWindow`'s `Frame`. DI container registered in `App.xaml.cs`.
 
-Pages: `DashboardPage` (status + countdown + ⚙ settings button), `SetupPage` (new session wizard), `ActiveSessionPage` (read-only live view), `SettingsPage` (Start-with-Windows toggle, tray info).
+- **`DashboardViewModel`**: registered **singleton** — avoids idle/active flicker when navigating back from settings.
+- **`CanEndEarly`**: `IsActive && !IsStrictMode` — do not tie to refresh flags (caused button flicker every 5s).
+- **`HasSessionBlocks`**: shows blocked apps/sites panel; scrollable via inner `ScrollViewer` (`MaxHeight=160`).
+
+Pages: `DashboardPage` (primary idle/active UI), `SetupPage` (wizard), `ActiveSessionPage` (legacy/alternate), `ScreenTimePage`, `SettingsPage`.
+
+**Screen Time enforcement**: `ScreenTimeManager.OnSessionStarted()` / `OnSessionEnded()` from `SessionManager`. Tick loop no-op when idle. Per-app over-limit uses `AppBlocker.ApplyScreenTimeBlock`. `IsBlockedResponse` includes optional `BlockMessage` for stub toasts.
+
+**End session early**: `MessageBox` Yes/No on dashboard and `ActiveSessionViewModel` before `EndSession` IPC.
 
 `TrayManager` (`Services/TrayManager.cs`) wraps `System.Windows.Forms.NotifyIcon` — the UI project enables `<UseWindowsForms>true</UseWindowsForms>` for this. The window hides to tray on minimize and on close; Exit is only available from the tray context menu. Use `using Application = System.Windows.Application;` in any file that uses `Application` directly to resolve the WPF/WinForms ambiguity.
 
@@ -102,7 +130,7 @@ When running as a registered Windows Service (`WindowsServiceHelpers.IsWindowsSe
 ## Important Constraints
 
 - **IFEO write/read requires SYSTEM** — always done in the Service, never the UI.
-- **Strict mode operation order is critical**: create account → add to Admins → hide → save session.json → demote others. Do not reorder.
+- **Strict mode**: apply service DACL + IFEO/hosts ACL locks after blocks are applied; cleanup reverses ACLs on session end.
 - **`SystemProcessList.IsSystemExe`** must be checked in the UI before any exe is added to the block list, and in the Service before writing any IFEO key.
 - The BlockerStub must always exit 0 and never throw — fail-open is essential since a hanging stub blocks the original process from showing any UI.
 - Session end cleanup must be idempotent — the service may call it after a crash recovery where partial cleanup already happened.

@@ -14,6 +14,10 @@ public class AppBlocker(ILogger log)
     private static readonly string StubPath =
         Path.Combine(AppContext.BaseDirectory, "FocusLock.BlockerStub.exe");
 
+  /// <summary>IFEO keys written for screen-time blocks (separate from session block list).</summary>
+  private readonly HashSet<string> _screenTimeIfeoKeys = new(StringComparer.OrdinalIgnoreCase);
+  private readonly Dictionary<string, string?> _screenTimeIfeoPrior = new(StringComparer.OrdinalIgnoreCase);
+
     public static bool IsSystemExe(string exeName) =>
         SystemProcessList.IsSystemExe(exeName);
 
@@ -156,6 +160,32 @@ public class AppBlocker(ILogger log)
     /// Scans every IFEO key and removes any Debugger value that points to our stub.
     /// Used by the emergency reset to clean up stale entries left by a prior session.
     /// </summary>
+    /// <summary>Redirects launches to the blocker stub when an app has hit a screen-time limit.</summary>
+    public void ApplyScreenTimeBlock(string exeName, FocusSession? session)
+    {
+        if (IsSystemExe(exeName)) return;
+        if (session?.BlockedApps.Any(a =>
+                string.Equals(a.ExeName, exeName, StringComparison.OrdinalIgnoreCase)) == true)
+            return;
+        if (!_screenTimeIfeoKeys.Add(exeName)) return;
+        WriteIfeoStandalone(exeName);
+    }
+
+    public void RemoveScreenTimeBlock(string exeName, FocusSession? session)
+    {
+        if (!_screenTimeIfeoKeys.Remove(exeName)) return;
+        if (session?.BlockedApps.Any(a =>
+                string.Equals(a.ExeName, exeName, StringComparison.OrdinalIgnoreCase)) == true)
+            return;
+        RestoreIfeoStandalone(exeName);
+    }
+
+    public void ClearAllScreenTimeBlocks(FocusSession? session)
+    {
+        foreach (var exe in _screenTimeIfeoKeys.ToList())
+            RemoveScreenTimeBlock(exe, session);
+    }
+
     public void RemoveAllStubIfeoKeys()
     {
         try
@@ -222,6 +252,53 @@ public class AppBlocker(ILogger log)
         catch (Exception ex)
         {
             log.LogError(ex, "Failed to restore IFEO for {Exe}.", exeName);
+        }
+    }
+
+    private void WriteIfeoStandalone(string exeName)
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.CreateSubKey($@"{IfeoBase}\{exeName}", writable: true);
+            if (!_screenTimeIfeoPrior.ContainsKey(exeName))
+            {
+                var existing = key.GetValue(DebuggerValue) as string;
+                if (string.Equals(existing, StubPath, StringComparison.OrdinalIgnoreCase))
+                    existing = null;
+                _screenTimeIfeoPrior[exeName] = existing;
+            }
+            key.SetValue(DebuggerValue, StubPath, RegistryValueKind.String);
+            log.LogDebug("Screen-time IFEO set for {Exe}.", exeName);
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "Failed to write screen-time IFEO for {Exe}.", exeName);
+            _screenTimeIfeoKeys.Remove(exeName);
+        }
+    }
+
+    private void RestoreIfeoStandalone(string exeName)
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey($@"{IfeoBase}\{exeName}", writable: true);
+            if (key is null)
+            {
+                _screenTimeIfeoPrior.Remove(exeName);
+                return;
+            }
+
+            if (_screenTimeIfeoPrior.TryGetValue(exeName, out var prior) && prior is not null)
+                key.SetValue(DebuggerValue, prior, RegistryValueKind.String);
+            else
+                key.DeleteValue(DebuggerValue, throwOnMissingValue: false);
+
+            _screenTimeIfeoPrior.Remove(exeName);
+            log.LogDebug("Screen-time IFEO restored for {Exe}.", exeName);
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "Failed to restore screen-time IFEO for {Exe}.", exeName);
         }
     }
 }

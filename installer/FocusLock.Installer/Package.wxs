@@ -18,7 +18,7 @@
            UpgradeCode="A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A1B"
            Scope="perMachine">
 
-    <SummaryInformation Description="Focus Lock — Self parental control for Windows" />
+    <SummaryInformation Description="Focus Lock Setup — Self parental control for Windows" />
     <MediaTemplate EmbedCab="yes" />
 
     <!-- Automatically remove older versions on upgrade. -->

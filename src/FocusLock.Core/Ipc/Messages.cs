@@ -33,7 +33,11 @@ public record SessionInfoResponse(
     List<BlockedSite>? BlockedSites,
     TimeSpan? TimeRemaining);
 
-public record IsBlockedResponse(bool IsBlocked, DateTime? DeadlineUtc, string? AppDisplayName);
+public record IsBlockedResponse(
+    bool IsBlocked,
+    DateTime? DeadlineUtc,
+    string? AppDisplayName,
+    string? BlockMessage = null);
 
 // ── Screen Time ────────────────────────────────────────────────────────────────
 
@@ -56,4 +60,6 @@ public record AppUsageStatus(
     int TotalSecondsToday,
     bool IsBlocked,
     int? CurrentIntervalSecondsUsed,
-    int? IntervalMinutes);
+    int? IntervalMinutes,
+  /// <summary>Local time when the current interval period ends (interval limits only).</summary>
+    DateTime? IntervalResetsAtLocal = null);

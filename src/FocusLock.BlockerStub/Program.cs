@@ -73,14 +73,21 @@ try
     var response = PipeFraming.ParsePayload<IsBlockedResponse>(reply);
     if (response?.IsBlocked == true)
     {
-        string timeStr = response.DeadlineUtc.HasValue
-            ? response.DeadlineUtc.Value.ToLocalTime().ToString("h:mm tt")
-            : "the scheduled time";
+        string body;
+        if (!string.IsNullOrWhiteSpace(response.BlockMessage))
+        {
+            body = response.BlockMessage;
+        }
+        else
+        {
+            string timeStr = response.DeadlineUtc.HasValue
+                ? response.DeadlineUtc.Value.ToLocalTime().ToString("h:mm tt")
+                : "the scheduled time";
+            string appLabel = response.AppDisplayName ?? exeName;
+            body = $"{appLabel} is blocked until {timeStr}.";
+        }
 
-        string appLabel = response.AppDisplayName ?? exeName;
-
-        await ShowToastAsync("Focus Lock — Access Blocked",
-            $"{appLabel} is blocked until {timeStr}.");
+        await ShowToastAsync("Focus Lock — Access Blocked", body);
     }
 }
 catch

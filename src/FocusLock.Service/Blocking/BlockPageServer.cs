@@ -100,8 +100,8 @@ public sealed class BlockPageServer : IDisposable
             string domain   = host ?? "this site";
             string deadline = session.DeadlineUtc.ToLocalTime().ToString("ddd, MMM d 'at' h:mm tt");
 
-            // Show native popup once per domain per 30 seconds (fire-and-forget on thread pool).
-            if (ShouldShowPopup(domain))
+            // Windows toast via BlockerStub (debounced to avoid spam on asset-heavy pages).
+            if (ShouldNotifyWebsiteBlock(domain))
                 _ = Task.Run(() => _notifier.ShowWebsiteBlocked(domain, deadline), ct);
 
             byte[] body   = Encoding.UTF8.GetBytes(BuildBlockPage(domain, deadline));
@@ -117,10 +117,10 @@ public sealed class BlockPageServer : IDisposable
         catch { /* client disconnected or timed out */ }
     }
 
-    private bool ShouldShowPopup(string domain)
+    private bool ShouldNotifyWebsiteBlock(string domain)
     {
         var now = DateTime.UtcNow;
-        if (_lastPopup.TryGetValue(domain, out var last) && (now - last).TotalSeconds < 30)
+        if (_lastPopup.TryGetValue(domain, out var last) && (now - last).TotalSeconds < 10)
             return false;
         _lastPopup[domain] = now;
         return true;

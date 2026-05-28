@@ -10,6 +10,7 @@ using FocusLock.Core.Ipc;
 using FocusLock.Core.Models;
 using FocusLock.UI.Services;
 using FocusLock.UI.Views;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Win32;
 
 namespace FocusLock.UI.ViewModels;
@@ -39,14 +40,14 @@ public partial class SetupViewModel : ObservableObject
 
     // ── Deadline ──────────────────────────────────────────────────────────────
 
-    [ObservableProperty] private DateTime _deadlineDate   = DateTime.Today.AddDays(1);
-    [ObservableProperty] private string   _deadlineHour   = "5";
+    [ObservableProperty] private DateTime _deadlineDate;
+    [ObservableProperty] private string   _deadlineHour   = "12";
     [ObservableProperty] private string   _deadlineMinute = "00";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAmPmAm))]
     [NotifyPropertyChangedFor(nameof(IsAmPmPm))]
-    private string _deadlineAmPm = "PM";
+    private string _deadlineAmPm = "AM";
 
     // ── App picker ────────────────────────────────────────────────────────────
 
@@ -69,9 +70,11 @@ public partial class SetupViewModel : ObservableObject
     public bool IsStrictMode  { get => SelectedMode == SessionMode.Strict;  set { if (value) SelectedMode = SessionMode.Strict; } }
 
     public DateTime TodayDate => DateTime.Today;
+    public DateTime MaxDeadlineDate => DateTime.Today.AddYears(1);
 
     public bool HasError        => !string.IsNullOrEmpty(ErrorMessage);
     public bool IsNotBusy       => !IsBusy;
+    public bool HasScreenTimeLimits => StEnableDailyLimit || StAppLimits.Count > 0;
     public bool HasNoFilteredApps => !IsLoadingApps && !FilteredApps.Any();
 
     public string AppDropdownLabel => BlockedApps.Count == 0
@@ -86,10 +89,13 @@ public partial class SetupViewModel : ObservableObject
     public ObservableCollection<SelectableApp> AvailableApps { get; } = new();
     public ObservableCollection<BlockedApp>    BlockedApps   { get; } = new();
     public ObservableCollection<BlockedSite>   BlockedSites  { get; } = new();
+    public ObservableCollection<SelectableWebsiteCategory> WebsiteCategories { get; } = new();
 
     // ── Screen Time — daily limit ─────────────────────────────────────────────
 
-    [ObservableProperty] private bool   _stEnableDailyLimit;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasScreenTimeLimits))]
+    private bool _stEnableDailyLimit;
     [ObservableProperty] private string _stDailyLimitHours = "2";
     [ObservableProperty] private string _stDailyLimitMin   = "0";
 
@@ -227,9 +233,26 @@ public partial class SetupViewModel : ObservableObject
         _client = client;
         _nav    = nav;
 
+        ApplyDefaultDeadline();
+        foreach (var (name, domains) in Core.Blocking.WebsiteCategories.All)
+            WebsiteCategories.Add(new SelectableWebsiteCategory(name, domains, OnWebsiteCategoryToggled));
+
         BlockedApps.CollectionChanged += (_, _) => OnPropertyChanged(nameof(AppDropdownLabel));
+        StAppLimits.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasScreenTimeLimits));
         _ = LoadAvailableAppsAsync();
         _ = LoadScreenTimeConfigAsync();
+    }
+
+    private void ApplyDefaultDeadline()
+    {
+        var deadline = DateTime.Now.AddHours(1);
+        DeadlineDate = deadline.Date;
+        int h24 = deadline.Hour;
+        DeadlineAmPm = h24 < 12 ? "AM" : "PM";
+        int h12 = h24 % 12;
+        if (h12 == 0) h12 = 12;
+        DeadlineHour   = h12.ToString();
+        DeadlineMinute = deadline.Minute.ToString("00");
     }
 
     // ── Focus Lock app loading ────────────────────────────────────────────────
@@ -278,7 +301,10 @@ public partial class SetupViewModel : ObservableObject
     private void LoadScreenTimeConfig(ScreenTimeConfig config)
     {
         StEnableDailyLimit = config.EnableDailyLimit;
-        (StDailyLimitHours, StDailyLimitMin) = StSplitMinutes(config.DailyLimitMinutes);
+        var dailyMinutes = config.DailyLimitMinutes;
+        if (config.EnableDailyLimit && dailyMinutes < ScreenTimeConfig.MinDailyLimitMinutes)
+            dailyMinutes = ScreenTimeConfig.MinDailyLimitMinutes;
+        (StDailyLimitHours, StDailyLimitMin) = StSplitMinutes(dailyMinutes);
 
         StDailyUseCustomSchedule = config.DailySchedule is not null;
         if (config.DailySchedule is not null)
@@ -355,7 +381,44 @@ public partial class SetupViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void RemoveSite(BlockedSite site) => BlockedSites.Remove(site);
+    private void RemoveSite(BlockedSite site)
+    {
+        BlockedSites.Remove(site);
+        SyncWebsiteCategorySelection();
+    }
+
+    private void OnWebsiteCategoryToggled(SelectableWebsiteCategory category, bool selected)
+    {
+        if (selected)
+        {
+            foreach (var domain in category.Domains)
+            {
+                if (!BlockedSites.Any(s => s.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase)))
+                    BlockedSites.Add(new BlockedSite(domain));
+            }
+        }
+        else
+        {
+            foreach (var domain in category.Domains.ToList())
+            {
+                var existing = BlockedSites.FirstOrDefault(s =>
+                    s.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase));
+                if (existing is not null)
+                    BlockedSites.Remove(existing);
+            }
+        }
+    }
+
+    private void SyncWebsiteCategorySelection()
+    {
+        foreach (var category in WebsiteCategories)
+        {
+            bool allPresent = category.Domains.All(d =>
+                BlockedSites.Any(s => s.Domain.Equals(d, StringComparison.OrdinalIgnoreCase)));
+            if (category.IsSelected != allPresent)
+                category.IsSelected = allPresent;
+        }
+    }
 
     [RelayCommand]
     private async Task StartSessionAsync()
@@ -367,14 +430,24 @@ public partial class SetupViewModel : ObservableObject
             ErrorMessage = "Deadline must be at least 5 minutes in the future.";
             return;
         }
-        if (BlockedApps.Count == 0 && BlockedSites.Count == 0)
+        if (deadline > DateTime.Now.AddYears(1))
         {
-            ErrorMessage = "Add at least one blocked app or website.";
+            ErrorMessage = "Deadline cannot be more than one year in the future.";
+            return;
+        }
+        if (BlockedApps.Count == 0 && BlockedSites.Count == 0 && !HasScreenTimeLimits)
+        {
+            ErrorMessage = "Add at least one blocked app or website, or enable a screen time limit.";
             return;
         }
         if (SelectedMode == SessionMode.Strict && !StrictConsentGiven)
         {
             ErrorMessage = "You must confirm consent to use Strict mode.";
+            return;
+        }
+        if (StEnableDailyLimit && StParseHMRaw(StDailyLimitHours, StDailyLimitMin) < ScreenTimeConfig.MinDailyLimitMinutes)
+        {
+            ErrorMessage = $"Daily screen time limit must be at least {ScreenTimeConfig.MinDailyLimitMinutes} minutes.";
             return;
         }
 
@@ -385,14 +458,18 @@ public partial class SetupViewModel : ObservableObject
 
             var req = new StartSessionRequest(
                 SelectedMode,
-                ComputedDeadline().ToUniversalTime(),
+                deadline.ToUniversalTime(),
                 BlockedApps.ToList(),
                 BlockedSites.ToList(),
                 StrictConsentGiven);
 
             var result = await _client.StartSessionAsync(req);
             if (result?.Success == true)
-                _nav.NavigateTo(new DashboardPage());
+            {
+                App.Services.GetRequiredService<DashboardViewModel>()
+                    .PrepareForActiveSession(SelectedMode);
+                _nav.NavigateToDashboard();
+            }
             else
                 ErrorMessage = result?.ErrorMessage ?? "Failed to start session.";
         }
@@ -403,7 +480,7 @@ public partial class SetupViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Cancel() => _nav.NavigateTo(new DashboardPage());
+    private void Cancel() => _nav.NavigateToDashboard();
 
     // ── Screen Time commands ──────────────────────────────────────────────────
 
@@ -495,7 +572,7 @@ public partial class SetupViewModel : ObservableObject
     internal ScreenTimeConfig BuildScreenTimeConfig() => new()
     {
         EnableDailyLimit  = StEnableDailyLimit,
-        DailyLimitMinutes = StParseHM(StDailyLimitHours, StDailyLimitMin),
+        DailyLimitMinutes = StParseDailyLimitMinutes(StDailyLimitHours, StDailyLimitMin),
         DailySchedule     = StDailyUseCustomSchedule ? BuildStGlobalSchedule() : null,
         AppLimits         = StAppLimits.Select(a => a.ToModel()).ToList()
     };
@@ -552,12 +629,19 @@ public partial class SetupViewModel : ObservableObject
         return (h.ToString(), t.Value.Minute.ToString("00"), ap);
     }
 
-    private static int StParseHM(string h, string m)
+    private static int StParseHMRaw(string h, string m)
     {
         int.TryParse(h, out int hours);
         int.TryParse(m, out int mins);
-        return Math.Max(1, hours * 60 + mins);
+        return Math.Max(0, hours * 60 + mins);
     }
+
+    /// <summary>Device daily limit — minimum 5 minutes. Not used for per-app limits.</summary>
+    private static int StParseDailyLimitMinutes(string h, string m)
+        => Math.Max(ScreenTimeConfig.MinDailyLimitMinutes, StParseHMRaw(h, m));
+
+    private static int StParseHM(string h, string m)
+        => Math.Max(1, StParseHMRaw(h, m));
 
     private static int StParseInt(string s, int fallback)
         => int.TryParse(s, out int v) && v > 0 ? v : fallback;

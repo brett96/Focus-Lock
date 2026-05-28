@@ -216,7 +216,10 @@ public partial class ScreenTimeViewModel : ObservableObject
     private void LoadFromConfig(ScreenTimeConfig config)
     {
         EnableDailyLimit = config.EnableDailyLimit;
-        (DailyLimitHours, DailyLimitMin) = SplitMinutes(config.DailyLimitMinutes);
+        var dailyMinutes = config.DailyLimitMinutes;
+        if (config.EnableDailyLimit && dailyMinutes < ScreenTimeConfig.MinDailyLimitMinutes)
+            dailyMinutes = ScreenTimeConfig.MinDailyLimitMinutes;
+        (DailyLimitHours, DailyLimitMin) = SplitMinutes(dailyMinutes);
 
         DailyUseCustomSchedule = config.DailySchedule is not null;
         if (config.DailySchedule is null)
@@ -280,6 +283,11 @@ public partial class ScreenTimeViewModel : ObservableObject
     private async Task SaveAsync()
     {
         SaveMessage = string.Empty;
+        if (EnableDailyLimit && ParseHMRaw(DailyLimitHours, DailyLimitMin) < ScreenTimeConfig.MinDailyLimitMinutes)
+        {
+            SaveMessage = $"Daily screen time limit must be at least {ScreenTimeConfig.MinDailyLimitMinutes} minutes.";
+            return;
+        }
         var config = BuildConfig();
         var result = await _client.SetScreenTimeConfigAsync(config);
         SaveMessage = result?.Success == true ? "Settings saved." : (result?.ErrorMessage ?? "Failed to reach service. Changes will apply next time the service is running.");
@@ -289,7 +297,7 @@ public partial class ScreenTimeViewModel : ObservableObject
     private void Back()
     {
         _statusTimer.Stop();
-        _nav.NavigateTo(new DashboardPage());
+        _nav.NavigateToDashboard();
     }
 
     [RelayCommand]
@@ -371,7 +379,7 @@ public partial class ScreenTimeViewModel : ObservableObject
     private ScreenTimeConfig BuildConfig() => new()
     {
         EnableDailyLimit  = EnableDailyLimit,
-        DailyLimitMinutes = ParseHM(DailyLimitHours, DailyLimitMin),
+        DailyLimitMinutes = ParseDailyLimitMinutes(DailyLimitHours, DailyLimitMin),
         DailySchedule     = DailyUseCustomSchedule ? BuildGlobalSchedule() : null,
         AppLimits         = AppLimits.Select(a => a.ToModel()).ToList()
     };
@@ -428,12 +436,18 @@ public partial class ScreenTimeViewModel : ObservableObject
         return (h.ToString(), t.Value.Minute.ToString("00"), ap);
     }
 
-    private static int ParseHM(string h, string m)
+    private static int ParseHMRaw(string h, string m)
     {
         int.TryParse(h, out int hours);
         int.TryParse(m, out int mins);
-        return Math.Max(1, hours * 60 + mins);
+        return Math.Max(0, hours * 60 + mins);
     }
+
+    private static int ParseDailyLimitMinutes(string h, string m)
+        => Math.Max(ScreenTimeConfig.MinDailyLimitMinutes, ParseHMRaw(h, m));
+
+    private static int ParseHM(string h, string m)
+        => Math.Max(1, ParseHMRaw(h, m));
 
     private static int ParseInt(string s, int fallback)
         => int.TryParse(s, out int v) && v > 0 ? v : fallback;

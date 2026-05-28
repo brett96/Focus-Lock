@@ -8,15 +8,27 @@ using FocusLock.Service.Blocking;
 namespace FocusLock.Service;
 
 /// <summary>
-/// Runs a 1-second tick loop that enforces all screen time limits independently of
-/// Focus Lock sessions.  Owned and started by SessionWorker.
+/// Runs a 1-second tick loop that enforces screen time limits only while a
+/// Focus Lock session is active. Owned and started by SessionWorker.
 /// </summary>
-public sealed class ScreenTimeManager(ILogger log)
+public sealed class ScreenTimeManager
 {
+    private readonly ILogger _log;
+    private readonly AppBlocker _appBlocker;
+    private readonly Func<FocusSession?> _getSession;
+
     private ScreenTimeConfig _config = ScreenTimeConfigRepository.Load();
-    private ScreenTimeState  _state  = ScreenTimeStateRepository.LoadOrReset();
+    private ScreenTimeState  _state  = new();
 
     private readonly SemaphoreSlim _lock = new(1, 1);
+    private volatile bool _sessionActive;
+
+    public ScreenTimeManager(ILogger log, AppBlocker appBlocker, Func<FocusSession?> getSession)
+    {
+        _log        = log;
+        _appBlocker = appBlocker;
+        _getSession = getSession;
+    }
 
     // Tracks the "lockout notification was sent for this login" moment.
     private DateTime? _lockoutNotifiedAt;
@@ -39,7 +51,7 @@ public sealed class ScreenTimeManager(ILogger log)
                 finally { _lock.Release(); }
             }
             catch (OperationCanceledException) { break; }
-            catch (Exception ex) { log.LogError(ex, "ScreenTimeManager tick error."); }
+            catch (Exception ex) { _log.LogError(ex, "ScreenTimeManager tick error."); }
 
             await Task.Delay(1000, ct);
         }
@@ -52,13 +64,16 @@ public sealed class ScreenTimeManager(ILogger log)
     {
         var req = PipeFraming.ParsePayload<SetScreenTimeConfigRequest>(msg);
         if (req?.Config is null) return new AckResponse(false, "Invalid payload.");
+        if (req.Config.EnableDailyLimit && req.Config.DailyLimitMinutes < ScreenTimeConfig.MinDailyLimitMinutes)
+            return new AckResponse(false,
+                $"Daily screen time limit must be at least {ScreenTimeConfig.MinDailyLimitMinutes} minutes.");
 
         await _lock.WaitAsync();
         try
         {
             _config = req.Config;
             ScreenTimeConfigRepository.Save(_config);
-            log.LogInformation("Screen time config updated.");
+            _log.LogInformation("Screen time config updated.");
             return new AckResponse(true);
         }
         finally { _lock.Release(); }
@@ -66,8 +81,92 @@ public sealed class ScreenTimeManager(ILogger log)
 
     public ScreenTimeConfigResponse HandleGetConfig() => new(_config);
 
+    public void OnSessionStarted()
+    {
+        _lock.Wait();
+        try
+        {
+            _sessionActive = true;
+            _state = new ScreenTimeState { Date = DateOnly.FromDateTime(DateTime.Now) };
+            _lockoutNotifiedAt = null;
+            _lastSessionId = 0xFFFFFFFF;
+            _stateDirty = true;
+            _log.LogInformation("Screen time tracking started for focus session.");
+        }
+        finally { _lock.Release(); }
+    }
+
+    public void OnSessionEnded()
+    {
+        _lock.Wait();
+        try
+        {
+            _sessionActive = false;
+            foreach (var usage in _state.AppUsage.Values)
+            {
+                usage.IsBlockedToday = false;
+                usage.IsBlockedInCurrentInterval = false;
+            }
+            _state.IsLockedOutForDay = false;
+            _state.TotalSecondsUsed = 0;
+            _lockoutNotifiedAt = null;
+            _stateDirty = true;
+            ScreenTimeStateRepository.Save(_state);
+            _appBlocker.ClearAllScreenTimeBlocks(_getSession());
+            _log.LogInformation("Screen time tracking stopped (session ended).");
+        }
+        finally { _lock.Release(); }
+    }
+
+    public IsBlockedResponse? GetLaunchBlockResponse(string exeName)
+    {
+        if (!_sessionActive) return null;
+        var session = _getSession();
+        if (session is null || session.Status != SessionStatus.Active) return null;
+
+        foreach (var limit in _config.AppLimits)
+        {
+            if (!string.Equals(limit.ExeName, exeName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            _state.AppUsage.TryGetValue(limit.ExeName, out var usage);
+            bool blocked = limit.LimitType == AppLimitType.DailyTotal
+                ? usage?.IsBlockedToday ?? false
+                : usage?.IsBlockedInCurrentInterval ?? false;
+            if (!blocked) return null;
+
+            string body = limit.LimitType == AppLimitType.DailyTotal
+                ? $"{limit.DisplayName} has reached its {limit.LimitMinutes}-minute limit for this session and cannot be opened until the limit resets."
+                : $"{limit.DisplayName} has reached its {limit.LimitMinutes}-minute allowance for this {limit.IntervalMinutes}-minute period and cannot be opened until the next interval.";
+
+            return new IsBlockedResponse(true, session.DeadlineUtc, limit.DisplayName, body);
+        }
+
+        return null;
+    }
+
+    public void VerifyScreenTimeIfeo()
+    {
+        if (!_sessionActive) return;
+        var session = _getSession();
+        foreach (var limit in _config.AppLimits)
+        {
+            _state.AppUsage.TryGetValue(limit.ExeName, out var usage);
+            bool blocked = limit.LimitType == AppLimitType.DailyTotal
+                ? usage?.IsBlockedToday ?? false
+                : usage?.IsBlockedInCurrentInterval ?? false;
+            if (blocked)
+                _appBlocker.ApplyScreenTimeBlock(limit.ExeName, session);
+        }
+    }
+
     public ScreenTimeStatusResponse HandleGetStatus()
     {
+        if (!_sessionActive)
+        {
+            return new ScreenTimeStatusResponse(false, 0, 0, false, []);
+        }
+
         var statuses = _config.AppLimits.Select(limit =>
         {
             _state.AppUsage.TryGetValue(limit.ExeName, out var u);
@@ -80,7 +179,10 @@ public sealed class ScreenTimeManager(ILogger log)
                 limit.LimitType, limit.LimitMinutes,
                 u?.TotalSecondsToday ?? 0, blocked,
                 limit.LimitType == AppLimitType.Interval ? u?.CurrentIntervalSecondsUsed : null,
-                limit.LimitType == AppLimitType.Interval ? limit.IntervalMinutes : null);
+                limit.LimitType == AppLimitType.Interval ? limit.IntervalMinutes : null,
+                limit.LimitType == AppLimitType.Interval
+                    ? ComputeIntervalResetsAt(DateTime.Now, limit)
+                    : null);
         }).ToList();
 
         return new ScreenTimeStatusResponse(
@@ -91,20 +193,55 @@ public sealed class ScreenTimeManager(ILogger log)
             statuses);
     }
 
+    /// <summary>
+    /// End of the current interval window (local time), aligned with <see cref="TickIntervalApp"/>.
+    /// </summary>
+    private DateTime? ComputeIntervalResetsAt(DateTime now, AppTimeLimit limit)
+    {
+        if (limit.LimitType != AppLimitType.Interval || limit.IntervalMinutes <= 0)
+            return null;
+
+        var schedule = limit.Schedule ?? _config.DailySchedule ?? ScreenTimeSchedule.Always;
+        if (!schedule.IsActiveNow(now))
+            return null;
+
+        var anchor = schedule.StartTime?.ToTimeSpan() ?? TimeSpan.Zero;
+        var scheduleStartToday = now.Date + anchor;
+        if (now < scheduleStartToday)
+            return scheduleStartToday;
+
+        double intervalSeconds = limit.IntervalMinutes * 60.0;
+        long intervalIndex = (long)((now - scheduleStartToday).TotalSeconds / intervalSeconds);
+        var intervalEnd = scheduleStartToday.AddSeconds((intervalIndex + 1) * intervalSeconds);
+
+        if (schedule.EndTime is { } endTime)
+        {
+            var scheduleEndToday = now.Date + endTime.ToTimeSpan();
+            if (intervalEnd > scheduleEndToday)
+                intervalEnd = scheduleEndToday;
+            if (now >= scheduleEndToday)
+                return null;
+        }
+
+        return intervalEnd;
+    }
+
     // ── Tick ──────────────────────────────────────────────────────────────────
 
     private void Tick()
     {
+        if (!_sessionActive) return;
+
         var now = DateTime.Now;
 
-        // Reset on date change (midnight rollover).
+        // Reset on date change (midnight rollover) while a session spans midnight.
         if (_state.Date != DateOnly.FromDateTime(now))
         {
             _state = new ScreenTimeState { Date = DateOnly.FromDateTime(now) };
             _lockoutNotifiedAt = null;
             _lastSessionId = 0xFFFFFFFF;
             _stateDirty = true;
-            log.LogInformation("Screen time state reset for new day.");
+            _log.LogInformation("Screen time state reset for new day.");
         }
 
         bool userActive = IsUserLoggedIn(out uint sessionId);
@@ -112,7 +249,7 @@ public sealed class ScreenTimeManager(ILogger log)
         // Detect user login (session ID changed while a user is now present).
         if (userActive && sessionId != _lastSessionId)
         {
-            log.LogDebug("User login detected (session {Id}).", sessionId);
+            _log.LogDebug("User login detected (session {Id}).", sessionId);
             _lockoutNotifiedAt = null; // re-notify on each new login
         }
         _lastSessionId = userActive ? sessionId : 0xFFFFFFFF;
@@ -145,7 +282,7 @@ public sealed class ScreenTimeManager(ILogger log)
             {
                 _state.IsLockedOutForDay = true;
                 _stateDirty = true;
-                log.LogInformation("Daily screen time limit reached ({Min} min).", _config.DailyLimitMinutes);
+                _log.LogInformation("Daily screen time limit reached ({Min} min).", _config.DailyLimitMinutes);
             }
         }
 
@@ -157,20 +294,20 @@ public sealed class ScreenTimeManager(ILogger log)
                 // First tick of this login → notify, then wait 5 s before disconnecting.
                 _lockoutNotifiedAt = now;
                 var timeStr = FormatMinutes(_config.DailyLimitMinutes);
-                log.LogInformation("Showing daily limit notification and scheduling disconnect.");
+                _log.LogInformation("Showing daily limit notification and scheduling disconnect.");
                 try
                 {
-                    var notifier = new SessionNotifier(log);
+                    var notifier = new SessionNotifier(_log);
                     notifier.ShowMessage(
                         "Focus Lock — Screen Time Limit Reached",
                         $"Your daily screen time limit of {timeStr} has been reached.\n\nYou will be signed out momentarily.");
                 }
-                catch (Exception ex) { log.LogDebug(ex, "Failed to show lockout notification."); }
+                catch (Exception ex) { _log.LogDebug(ex, "Failed to show lockout notification."); }
             }
             else if ((now - _lockoutNotifiedAt.Value).TotalSeconds >= 5)
             {
                 WTSDisconnectSession(IntPtr.Zero, sessionId, false);
-                log.LogInformation("Disconnected session {Id} (daily screen time limit).", sessionId);
+                _log.LogInformation("Disconnected session {Id} (daily screen time limit).", sessionId);
                 // Session is gone; reset so next login gets notified again.
                 _lastSessionId = 0xFFFFFFFF;
                 _lockoutNotifiedAt = null;
@@ -219,6 +356,7 @@ public sealed class ScreenTimeManager(ILogger log)
             {
                 usage.IsBlockedToday = false;
                 _stateDirty = true;
+                _appBlocker.RemoveScreenTimeBlock(limit.ExeName, _getSession());
             }
             return;
         }
@@ -230,15 +368,16 @@ public sealed class ScreenTimeManager(ILogger log)
             {
                 usage.IsBlockedToday = true;
                 _stateDirty = true;
-                log.LogInformation("App {Exe} daily limit reached ({Min} min).",
+                _appBlocker.ApplyScreenTimeBlock(limit.ExeName, _getSession());
+                _log.LogInformation("App {Exe} daily limit reached ({Min} min).",
                     limit.ExeName, limit.LimitMinutes);
                 try
                 {
-                    new SessionNotifier(log).ShowMessage(
+                    new SessionNotifier(_log).ShowMessage(
                         "Focus Lock — App Time Limit",
-                        $"{limit.DisplayName} has reached its {limit.LimitMinutes}-minute daily limit and will be closed.");
+                        $"{limit.DisplayName} has reached its {limit.LimitMinutes}-minute limit for this session and will be closed.");
                 }
-                catch (Exception ex) { log.LogDebug(ex, "Failed to show app limit notification."); }
+                catch (Exception ex) { _log.LogDebug(ex, "Failed to show app limit notification."); }
             }
         }
 
@@ -260,6 +399,8 @@ public sealed class ScreenTimeManager(ILogger log)
 
         if (usage.CurrentIntervalIndex != intervalIndex)
         {
+            if (usage.IsBlockedInCurrentInterval)
+                _appBlocker.RemoveScreenTimeBlock(limit.ExeName, _getSession());
             usage.CurrentIntervalIndex = intervalIndex;
             usage.CurrentIntervalSecondsUsed = 0;
             usage.IsBlockedInCurrentInterval = false;
@@ -274,15 +415,16 @@ public sealed class ScreenTimeManager(ILogger log)
             {
                 usage.IsBlockedInCurrentInterval = true;
                 _stateDirty = true;
-                log.LogInformation("App {Exe} interval limit reached ({Min} min per {Int} min).",
+                _appBlocker.ApplyScreenTimeBlock(limit.ExeName, _getSession());
+                _log.LogInformation("App {Exe} interval limit reached ({Min} min per {Int} min).",
                     limit.ExeName, limit.LimitMinutes, limit.IntervalMinutes);
                 try
                 {
-                    new SessionNotifier(log).ShowMessage(
+                    new SessionNotifier(_log).ShowMessage(
                         "Focus Lock — App Time Limit",
                         $"{limit.DisplayName} has reached its {limit.LimitMinutes}-minute limit for this {limit.IntervalMinutes}-minute period and will be closed.");
                 }
-                catch (Exception ex) { log.LogDebug(ex, "Failed to show app limit notification."); }
+                catch (Exception ex) { _log.LogDebug(ex, "Failed to show app limit notification."); }
             }
         }
 
