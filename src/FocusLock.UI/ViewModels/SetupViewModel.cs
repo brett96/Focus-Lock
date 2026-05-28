@@ -17,7 +17,10 @@ public partial class SetupViewModel : ObservableObject
     private readonly ServiceClient _client;
     private readonly NavigationService _nav;
 
-    [ObservableProperty] private SessionMode _selectedMode = SessionMode.Regular;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRegularMode))]
+    [NotifyPropertyChangedFor(nameof(IsStrictMode))]
+    private SessionMode _selectedMode = SessionMode.Regular;
     [ObservableProperty] private string _newAppPath = string.Empty;
     [ObservableProperty] private string _newSiteDomain = string.Empty;
     [ObservableProperty] private bool _strictConsentGiven;
@@ -54,12 +57,12 @@ public partial class SetupViewModel : ObservableObject
     public bool IsRegularMode
     {
         get => SelectedMode == SessionMode.Regular;
-        set { if (value) { SelectedMode = SessionMode.Regular; OnPropertyChanged(nameof(IsStrictMode)); } }
+        set { if (value) SelectedMode = SessionMode.Regular; }
     }
     public bool IsStrictMode
     {
         get => SelectedMode == SessionMode.Strict;
-        set { if (value) { SelectedMode = SessionMode.Strict; OnPropertyChanged(nameof(IsRegularMode)); } }
+        set { if (value) SelectedMode = SessionMode.Strict; }
     }
     public bool HasError => !string.IsNullOrEmpty(ErrorMessage);
     public bool IsNotBusy => !IsBusy;

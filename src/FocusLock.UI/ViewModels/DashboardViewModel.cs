@@ -5,7 +5,6 @@ using FocusLock.Core.Ipc;
 using FocusLock.Core.Models;
 using FocusLock.UI.Services;
 using FocusLock.UI.Views;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace FocusLock.UI.ViewModels;
 
@@ -13,7 +12,12 @@ public partial class DashboardViewModel : ObservableObject
 {
     private readonly ServiceClient _client;
     private readonly NavigationService _nav;
-    private readonly DispatcherTimer _timer;
+
+    // Ticks every second to update the countdown display — no I/O, just arithmetic.
+    private readonly DispatcherTimer _countdownTimer;
+
+    // Polls the service every 5 seconds to sync session state (active/idle, mode, deadline).
+    private readonly DispatcherTimer _pollTimer;
 
     [ObservableProperty] private SessionStatus _sessionStatus = SessionStatus.Idle;
     [ObservableProperty] private SessionMode _sessionMode = SessionMode.None;
@@ -43,9 +47,32 @@ public partial class DashboardViewModel : ObservableObject
         _client = client;
         _nav = nav;
 
-        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _timer.Tick += async (_, _) => await RefreshAsync();
-        _timer.Start();
+        _countdownTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _countdownTimer.Tick += (_, _) => TickCountdown();
+        _countdownTimer.Start();
+
+        _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _pollTimer.Tick += async (_, _) => await RefreshAsync();
+        _pollTimer.Start();
+    }
+
+    // Called every second from _countdownTimer. Pure local computation — no pipe call.
+    private void TickCountdown()
+    {
+        if (SessionStatus != SessionStatus.Active || !_deadlineUtc.HasValue) return;
+
+        var remaining = _deadlineUtc.Value - DateTime.UtcNow;
+        if (remaining <= TimeSpan.Zero)
+        {
+            TimeRemaining = "00:00:00";
+            // Deadline passed locally — trigger an immediate poll so the UI transitions
+            // to the idle state as soon as the service confirms the session is over.
+            _ = RefreshAsync();
+        }
+        else
+        {
+            TimeRemaining = remaining.ToString(@"hh\:mm\:ss");
+        }
     }
 
     public async Task RefreshAsync()
@@ -80,11 +107,9 @@ public partial class DashboardViewModel : ObservableObject
 
         if (info.Status == SessionStatus.Active && info.DeadlineUtc.HasValue)
         {
-            var remaining = info.DeadlineUtc.Value - DateTime.UtcNow;
-            TimeRemaining = remaining > TimeSpan.Zero
-                ? remaining.ToString(@"hh\:mm\:ss")
-                : "00:00:00";
             DeadlineText = info.DeadlineUtc.Value.ToLocalTime().ToString("ddd, MMM d 'at' h:mm tt");
+            // Sync the display immediately after a poll so there is no visible jump.
+            TickCountdown();
         }
         else
         {
@@ -103,7 +128,7 @@ public partial class DashboardViewModel : ObservableObject
     private async Task EndSessionAsync()
     {
         if (SessionMode == SessionMode.Strict) return;
-        _timer.Stop();
+        _pollTimer.Stop();
         try
         {
             var result = await _client.EndSessionAsync();
@@ -112,9 +137,13 @@ public partial class DashboardViewModel : ObservableObject
         }
         finally
         {
-            _timer.Start();
+            _pollTimer.Start();
         }
     }
 
-    public void StopPolling() => _timer.Stop();
+    public void StopPolling()
+    {
+        _countdownTimer.Stop();
+        _pollTimer.Stop();
+    }
 }
