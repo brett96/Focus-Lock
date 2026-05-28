@@ -14,7 +14,9 @@
       "PowerShell(New-Item *)",
       "Bash(Select-String -Pattern \"error|warning|succeeded|failed\")",
       "Bash(.\\\\build\\\\build.ps1)",
-      "PowerShell(dotnet build *)"
+      "PowerShell(dotnet build *)",
+      "Bash(Get-ChildItem -Recurse -Filter \"SelectableApp.cs\")",
+      "Bash(Select-Object FullName)"
     ]
   }
 }

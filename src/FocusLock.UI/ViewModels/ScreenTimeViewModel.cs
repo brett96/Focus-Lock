@@ -25,11 +25,9 @@ public partial class ScreenTimeViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSchedulePicker))]
-    [NotifyPropertyChangedFor(nameof(IsCustomSchedule))]
-    private bool _dailyAllDay = true;
+    private bool _dailyUseCustomSchedule;
 
-    public bool ShowSchedulePicker => !DailyAllDay;
-    public bool IsCustomSchedule   { get => !DailyAllDay; set => DailyAllDay = !value; }
+    public bool ShowSchedulePicker => DailyUseCustomSchedule;
 
     // ── Global schedule days ──────────────────────────────────────────────────
 
@@ -220,14 +218,13 @@ public partial class ScreenTimeViewModel : ObservableObject
         EnableDailyLimit = config.EnableDailyLimit;
         (DailyLimitHours, DailyLimitMin) = SplitMinutes(config.DailyLimitMinutes);
 
+        DailyUseCustomSchedule = config.DailySchedule is not null;
         if (config.DailySchedule is null)
         {
-            DailyAllDay = true;
             _globalDays = (DayOfWeekFlags)127;
         }
         else
         {
-            DailyAllDay = false;
             _globalDays = config.DailySchedule.ActiveDays;
             (GlobalStartHour, GlobalStartMinute, GlobalStartAmPm) =
                 ToTimeFields(config.DailySchedule.StartTime);
@@ -375,7 +372,7 @@ public partial class ScreenTimeViewModel : ObservableObject
     {
         EnableDailyLimit  = EnableDailyLimit,
         DailyLimitMinutes = ParseHM(DailyLimitHours, DailyLimitMin),
-        DailySchedule     = DailyAllDay ? null : BuildGlobalSchedule(),
+        DailySchedule     = DailyUseCustomSchedule ? BuildGlobalSchedule() : null,
         AppLimits         = AppLimits.Select(a => a.ToModel()).ToList()
     };
 

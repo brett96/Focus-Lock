@@ -15,4 +15,10 @@ public partial class SetupPage : Page
     // Syncs the toggle button back to unchecked when Popup closes via click-outside.
     private void AppPopup_Closed(object sender, EventArgs e)
         => AppDropdownBtn.IsChecked = false;
+
+    private void StAppPopup_Closed(object sender, EventArgs e)
+    {
+        var vm = (SetupViewModel)DataContext;
+        vm.StIsDraftAppPopupOpen = false;
+    }
 }

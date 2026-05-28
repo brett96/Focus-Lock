@@ -10,7 +10,10 @@ var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 });
 
 builder.Services.AddWindowsService(o => o.ServiceName = "FocusLockService");
+builder.Services.AddSingleton<SessionManager>();
 builder.Services.AddHostedService<SessionWorker>();
+builder.Services.AddHostedService<AppMonitorWorker>();
+builder.Services.AddHostedService<DeadlineWatcherWorker>();
 
 // Log to Windows Event Log when running as a service; fall back to console during development.
 if (WindowsServiceHelpers.IsWindowsService())

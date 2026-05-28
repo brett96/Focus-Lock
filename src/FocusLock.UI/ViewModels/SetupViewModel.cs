@@ -19,6 +19,8 @@ public partial class SetupViewModel : ObservableObject
     private readonly ServiceClient _client;
     private readonly NavigationService _nav;
 
+    // ── Session mode ──────────────────────────────────────────────────────────
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRegularMode))]
     [NotifyPropertyChangedFor(nameof(IsStrictMode))]
@@ -35,7 +37,8 @@ public partial class SetupViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsNotBusy))]
     private bool _isBusy;
 
-    // Deadline split into date + 12-hour time + AM/PM for the UI
+    // ── Deadline ──────────────────────────────────────────────────────────────
+
     [ObservableProperty] private DateTime _deadlineDate   = DateTime.Today.AddDays(1);
     [ObservableProperty] private string   _deadlineHour   = "5";
     [ObservableProperty] private string   _deadlineMinute = "00";
@@ -45,39 +48,30 @@ public partial class SetupViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsAmPmPm))]
     private string _deadlineAmPm = "PM";
 
+    // ── App picker ────────────────────────────────────────────────────────────
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FilteredApps))]
     [NotifyPropertyChangedFor(nameof(HasNoFilteredApps))]
+    [NotifyPropertyChangedFor(nameof(StFilteredDraftApps))]
+    [NotifyPropertyChangedFor(nameof(StHasNoDraftApps))]
     private string _appSearchText = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasNoFilteredApps))]
+    [NotifyPropertyChangedFor(nameof(StHasNoDraftApps))]
     private bool _isLoadingApps = true;
 
-    public bool IsAmPmAm
-    {
-        get => DeadlineAmPm == "AM";
-        set { if (value) DeadlineAmPm = "AM"; }
-    }
-    public bool IsAmPmPm
-    {
-        get => DeadlineAmPm == "PM";
-        set { if (value) DeadlineAmPm = "PM"; }
-    }
+    public bool IsAmPmAm { get => DeadlineAmPm == "AM"; set { if (value) DeadlineAmPm = "AM"; } }
+    public bool IsAmPmPm { get => DeadlineAmPm == "PM"; set { if (value) DeadlineAmPm = "PM"; } }
 
-    public bool IsRegularMode
-    {
-        get => SelectedMode == SessionMode.Regular;
-        set { if (value) SelectedMode = SessionMode.Regular; }
-    }
-    public bool IsStrictMode
-    {
-        get => SelectedMode == SessionMode.Strict;
-        set { if (value) SelectedMode = SessionMode.Strict; }
-    }
+    public bool IsRegularMode { get => SelectedMode == SessionMode.Regular; set { if (value) SelectedMode = SessionMode.Regular; } }
+    public bool IsStrictMode  { get => SelectedMode == SessionMode.Strict;  set { if (value) SelectedMode = SessionMode.Strict; } }
 
-    public bool HasError       => !string.IsNullOrEmpty(ErrorMessage);
-    public bool IsNotBusy      => !IsBusy;
+    public DateTime TodayDate => DateTime.Today;
+
+    public bool HasError        => !string.IsNullOrEmpty(ErrorMessage);
+    public bool IsNotBusy       => !IsBusy;
     public bool HasNoFilteredApps => !IsLoadingApps && !FilteredApps.Any();
 
     public string AppDropdownLabel => BlockedApps.Count == 0
@@ -87,13 +81,146 @@ public partial class SetupViewModel : ObservableObject
     public IEnumerable<SelectableApp> FilteredApps =>
         string.IsNullOrWhiteSpace(AppSearchText)
             ? AvailableApps
-            : AvailableApps.Where(a =>
-                a.DisplayName.Contains(AppSearchText, StringComparison.OrdinalIgnoreCase));
+            : AvailableApps.Where(a => a.DisplayName.Contains(AppSearchText, StringComparison.OrdinalIgnoreCase));
 
-    // Populated from the App Paths registry on a background thread.
     public ObservableCollection<SelectableApp> AvailableApps { get; } = new();
     public ObservableCollection<BlockedApp>    BlockedApps   { get; } = new();
     public ObservableCollection<BlockedSite>   BlockedSites  { get; } = new();
+
+    // ── Screen Time — daily limit ─────────────────────────────────────────────
+
+    [ObservableProperty] private bool   _stEnableDailyLimit;
+    [ObservableProperty] private string _stDailyLimitHours = "2";
+    [ObservableProperty] private string _stDailyLimitMin   = "0";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StShowSchedulePicker))]
+    private bool _stDailyUseCustomSchedule;
+
+    public bool StShowSchedulePicker => StDailyUseCustomSchedule;
+
+    // ── Screen Time — global schedule days ───────────────────────────────────
+
+    private DayOfWeekFlags _stGlobalDays = (DayOfWeekFlags)127;
+
+    public bool StGlobalMon { get => GetDay(_stGlobalDays, DayOfWeekFlags.Monday);    set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Monday,    value, nameof(StGlobalMon)); }
+    public bool StGlobalTue { get => GetDay(_stGlobalDays, DayOfWeekFlags.Tuesday);   set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Tuesday,   value, nameof(StGlobalTue)); }
+    public bool StGlobalWed { get => GetDay(_stGlobalDays, DayOfWeekFlags.Wednesday); set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Wednesday, value, nameof(StGlobalWed)); }
+    public bool StGlobalThu { get => GetDay(_stGlobalDays, DayOfWeekFlags.Thursday);  set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Thursday,  value, nameof(StGlobalThu)); }
+    public bool StGlobalFri { get => GetDay(_stGlobalDays, DayOfWeekFlags.Friday);    set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Friday,    value, nameof(StGlobalFri)); }
+    public bool StGlobalSat { get => GetDay(_stGlobalDays, DayOfWeekFlags.Saturday);  set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Saturday,  value, nameof(StGlobalSat)); }
+    public bool StGlobalSun { get => GetDay(_stGlobalDays, DayOfWeekFlags.Sunday);    set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Sunday,    value, nameof(StGlobalSun)); }
+
+    // ── Screen Time — global schedule time range ──────────────────────────────
+
+    [ObservableProperty] private string _stGlobalStartHour   = "9";
+    [ObservableProperty] private string _stGlobalStartMinute = "00";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StGlobalStartIsAm))]
+    [NotifyPropertyChangedFor(nameof(StGlobalStartIsPm))]
+    private string _stGlobalStartAmPm = "AM";
+
+    public bool StGlobalStartIsAm { get => StGlobalStartAmPm == "AM"; set { if (value) StGlobalStartAmPm = "AM"; } }
+    public bool StGlobalStartIsPm { get => StGlobalStartAmPm == "PM"; set { if (value) StGlobalStartAmPm = "PM"; } }
+
+    [ObservableProperty] private string _stGlobalEndHour   = "5";
+    [ObservableProperty] private string _stGlobalEndMinute = "00";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StGlobalEndIsAm))]
+    [NotifyPropertyChangedFor(nameof(StGlobalEndIsPm))]
+    private string _stGlobalEndAmPm = "PM";
+
+    public bool StGlobalEndIsAm { get => StGlobalEndAmPm == "AM"; set { if (value) StGlobalEndAmPm = "AM"; } }
+    public bool StGlobalEndIsPm { get => StGlobalEndAmPm == "PM"; set { if (value) StGlobalEndAmPm = "PM"; } }
+
+    // ── Screen Time — app limits list ─────────────────────────────────────────
+
+    public ObservableCollection<AppTimeLimitViewModel> StAppLimits { get; } = new();
+
+    // ── Screen Time — draft add-app form ─────────────────────────────────────
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StIsNotAdding))]
+    private bool _stIsAddingAppLimit;
+
+    public bool StIsNotAdding => !StIsAddingAppLimit;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StFilteredDraftApps))]
+    [NotifyPropertyChangedFor(nameof(StHasNoDraftApps))]
+    private string _stDraftAppSearch = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StHasDraftExe))]
+    private string _stDraftExeName = string.Empty;
+
+    [ObservableProperty] private string _stDraftDisplayName = string.Empty;
+
+    public bool StHasDraftExe => !string.IsNullOrEmpty(StDraftExeName);
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StIsDailyTotalDraft))]
+    [NotifyPropertyChangedFor(nameof(StIsIntervalDraft))]
+    private AppLimitType _stDraftLimitType = AppLimitType.DailyTotal;
+
+    public bool StIsDailyTotalDraft { get => StDraftLimitType == AppLimitType.DailyTotal; set { if (value) StDraftLimitType = AppLimitType.DailyTotal; } }
+    public bool StIsIntervalDraft   { get => StDraftLimitType == AppLimitType.Interval;   set { if (value) StDraftLimitType = AppLimitType.Interval; } }
+
+    [ObservableProperty] private string _stDraftLimitHours     = "1";
+    [ObservableProperty] private string _stDraftLimitMin       = "0";
+    [ObservableProperty] private string _stDraftIntervalLimit  = "20";
+    [ObservableProperty] private string _stDraftIntervalPeriod = "60";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StShowDraftSchedulePicker))]
+    private bool _stDraftUseCustomSchedule;
+
+    public bool StShowDraftSchedulePicker => StDraftUseCustomSchedule;
+
+    private DayOfWeekFlags _stDraftDays = (DayOfWeekFlags)127;
+
+    public bool StDraftMon { get => GetDay(_stDraftDays, DayOfWeekFlags.Monday);    set => SetDay(ref _stDraftDays, DayOfWeekFlags.Monday,    value, nameof(StDraftMon)); }
+    public bool StDraftTue { get => GetDay(_stDraftDays, DayOfWeekFlags.Tuesday);   set => SetDay(ref _stDraftDays, DayOfWeekFlags.Tuesday,   value, nameof(StDraftTue)); }
+    public bool StDraftWed { get => GetDay(_stDraftDays, DayOfWeekFlags.Wednesday); set => SetDay(ref _stDraftDays, DayOfWeekFlags.Wednesday, value, nameof(StDraftWed)); }
+    public bool StDraftThu { get => GetDay(_stDraftDays, DayOfWeekFlags.Thursday);  set => SetDay(ref _stDraftDays, DayOfWeekFlags.Thursday,  value, nameof(StDraftThu)); }
+    public bool StDraftFri { get => GetDay(_stDraftDays, DayOfWeekFlags.Friday);    set => SetDay(ref _stDraftDays, DayOfWeekFlags.Friday,    value, nameof(StDraftFri)); }
+    public bool StDraftSat { get => GetDay(_stDraftDays, DayOfWeekFlags.Saturday);  set => SetDay(ref _stDraftDays, DayOfWeekFlags.Saturday,  value, nameof(StDraftSat)); }
+    public bool StDraftSun { get => GetDay(_stDraftDays, DayOfWeekFlags.Sunday);    set => SetDay(ref _stDraftDays, DayOfWeekFlags.Sunday,    value, nameof(StDraftSun)); }
+
+    [ObservableProperty] private string _stDraftStartHour   = "9";
+    [ObservableProperty] private string _stDraftStartMinute = "00";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StDraftStartIsAm))]
+    [NotifyPropertyChangedFor(nameof(StDraftStartIsPm))]
+    private string _stDraftStartAmPm = "AM";
+
+    public bool StDraftStartIsAm { get => StDraftStartAmPm == "AM"; set { if (value) StDraftStartAmPm = "AM"; } }
+    public bool StDraftStartIsPm { get => StDraftStartAmPm == "PM"; set { if (value) StDraftStartAmPm = "PM"; } }
+
+    [ObservableProperty] private string _stDraftEndHour   = "5";
+    [ObservableProperty] private string _stDraftEndMinute = "00";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StDraftEndIsAm))]
+    [NotifyPropertyChangedFor(nameof(StDraftEndIsPm))]
+    private string _stDraftEndAmPm = "PM";
+
+    public bool StDraftEndIsAm { get => StDraftEndAmPm == "AM"; set { if (value) StDraftEndAmPm = "AM"; } }
+    public bool StDraftEndIsPm { get => StDraftEndAmPm == "PM"; set { if (value) StDraftEndAmPm = "PM"; } }
+
+    [ObservableProperty] private bool _stIsDraftAppPopupOpen;
+
+    public IEnumerable<SelectableApp> StFilteredDraftApps =>
+        string.IsNullOrWhiteSpace(StDraftAppSearch)
+            ? AvailableApps
+            : AvailableApps.Where(a => a.DisplayName.Contains(StDraftAppSearch, StringComparison.OrdinalIgnoreCase));
+
+    public bool StHasNoDraftApps => !IsLoadingApps && !StFilteredDraftApps.Any();
+
+    // ── Constructor ───────────────────────────────────────────────────────────
 
     public SetupViewModel(ServiceClient client, NavigationService nav)
     {
@@ -102,7 +229,10 @@ public partial class SetupViewModel : ObservableObject
 
         BlockedApps.CollectionChanged += (_, _) => OnPropertyChanged(nameof(AppDropdownLabel));
         _ = LoadAvailableAppsAsync();
+        _ = LoadScreenTimeConfigAsync();
     }
+
+    // ── Focus Lock app loading ────────────────────────────────────────────────
 
     private async Task LoadAvailableAppsAsync()
     {
@@ -115,6 +245,8 @@ public partial class SetupViewModel : ObservableObject
         IsLoadingApps = false;
         OnPropertyChanged(nameof(FilteredApps));
         OnPropertyChanged(nameof(HasNoFilteredApps));
+        OnPropertyChanged(nameof(StFilteredDraftApps));
+        OnPropertyChanged(nameof(StHasNoDraftApps));
     }
 
     private void OnSelectableAppChanged(object? sender, PropertyChangedEventArgs e)
@@ -134,17 +266,47 @@ public partial class SetupViewModel : ObservableObject
         }
     }
 
+    // ── Screen Time loading ───────────────────────────────────────────────────
+
+    private async Task LoadScreenTimeConfigAsync()
+    {
+        var resp = await _client.GetScreenTimeConfigAsync();
+        if (resp is not null)
+            LoadScreenTimeConfig(resp.Config);
+    }
+
+    private void LoadScreenTimeConfig(ScreenTimeConfig config)
+    {
+        StEnableDailyLimit = config.EnableDailyLimit;
+        (StDailyLimitHours, StDailyLimitMin) = StSplitMinutes(config.DailyLimitMinutes);
+
+        StDailyUseCustomSchedule = config.DailySchedule is not null;
+        if (config.DailySchedule is not null)
+        {
+            _stGlobalDays = config.DailySchedule.ActiveDays;
+            (StGlobalStartHour, StGlobalStartMinute, StGlobalStartAmPm) = StToTimeFields(config.DailySchedule.StartTime);
+            (StGlobalEndHour,   StGlobalEndMinute,   StGlobalEndAmPm)   = StToTimeFields(config.DailySchedule.EndTime);
+            StRefreshDayProps("StGlobal");
+        }
+
+        StAppLimits.Clear();
+        foreach (var limit in config.AppLimits)
+            StAppLimits.Add(new AppTimeLimitViewModel(limit, StRemoveAppLimit));
+    }
+
+    private void StRemoveAppLimit(AppTimeLimitViewModel vm) => StAppLimits.Remove(vm);
+
+    // ── Focus Lock commands ───────────────────────────────────────────────────
 
     [RelayCommand]
     private void RemoveApp(BlockedApp app)
     {
-        // Uncheck in the dropdown (handler removes from BlockedApps).
         var selectable = AvailableApps.FirstOrDefault(a =>
             string.Equals(a.ExeName, app.ExeName, StringComparison.OrdinalIgnoreCase));
         if (selectable is not null)
             selectable.IsSelected = false;
         else
-            BlockedApps.Remove(app); // manually browsed app not in AvailableApps
+            BlockedApps.Remove(app);
     }
 
     [RelayCommand]
@@ -164,7 +326,6 @@ public partial class SetupViewModel : ObservableObject
             return;
         }
 
-        // If it's in AvailableApps, just check it; otherwise add directly to BlockedApps.
         var selectable = AvailableApps.FirstOrDefault(a =>
             string.Equals(a.ExeName, exeName, StringComparison.OrdinalIgnoreCase));
         if (selectable is not null)
@@ -196,17 +357,6 @@ public partial class SetupViewModel : ObservableObject
     [RelayCommand]
     private void RemoveSite(BlockedSite site) => BlockedSites.Remove(site);
 
-    private DateTime ComputedDeadline()
-    {
-        int.TryParse(DeadlineHour, out int h);
-        int.TryParse(DeadlineMinute, out int m);
-        h = Math.Clamp(h, 1, 12);
-        m = Math.Clamp(m, 0, 59);
-        if (DeadlineAmPm == "PM" && h != 12) h += 12;
-        else if (DeadlineAmPm == "AM" && h == 12) h = 0;
-        return DeadlineDate.Date + new TimeSpan(h, m, 0);
-    }
-
     [RelayCommand]
     private async Task StartSessionAsync()
     {
@@ -231,6 +381,8 @@ public partial class SetupViewModel : ObservableObject
         IsBusy = true;
         try
         {
+            await _client.SetScreenTimeConfigAsync(BuildScreenTimeConfig());
+
             var req = new StartSessionRequest(
                 SelectedMode,
                 ComputedDeadline().ToUniversalTime(),
@@ -252,4 +404,164 @@ public partial class SetupViewModel : ObservableObject
 
     [RelayCommand]
     private void Cancel() => _nav.NavigateTo(new DashboardPage());
+
+    // ── Screen Time commands ──────────────────────────────────────────────────
+
+    [RelayCommand]
+    private void StShowAddAppLimit()
+    {
+        StIsAddingAppLimit    = true;
+        StDraftExeName        = string.Empty;
+        StDraftDisplayName    = string.Empty;
+        StDraftLimitType      = AppLimitType.DailyTotal;
+        StDraftLimitHours     = "1";
+        StDraftLimitMin       = "0";
+        StDraftIntervalLimit  = "20";
+        StDraftIntervalPeriod = "60";
+        StDraftUseCustomSchedule = false;
+        StDraftAppSearch      = string.Empty;
+        _stDraftDays          = (DayOfWeekFlags)127;
+        StRefreshDayProps("StDraft");
+        StDraftStartHour = "9"; StDraftStartMinute = "00"; StDraftStartAmPm = "AM";
+        StDraftEndHour   = "5"; StDraftEndMinute   = "00"; StDraftEndAmPm   = "PM";
+    }
+
+    [RelayCommand]
+    private void StCancelAdd() => StIsAddingAppLimit = false;
+
+    [RelayCommand]
+    private void StSelectDraftApp(SelectableApp app)
+    {
+        StDraftExeName        = app.ExeName;
+        StDraftDisplayName    = app.DisplayName;
+        StDraftAppSearch      = string.Empty;
+        StIsDraftAppPopupOpen = false;
+    }
+
+    [RelayCommand]
+    private void StBrowseDraftApp()
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "Executables (*.exe)|*.exe",
+            Title  = "Select application to limit"
+        };
+        if (dlg.ShowDialog() != true) return;
+        StDraftExeName     = Path.GetFileName(dlg.FileName);
+        StDraftDisplayName = FileVersionInfo.GetVersionInfo(dlg.FileName).ProductName
+            ?? Path.GetFileNameWithoutExtension(dlg.FileName);
+        StIsDraftAppPopupOpen = false;
+    }
+
+    [RelayCommand]
+    private void StAddAppLimit()
+    {
+        if (string.IsNullOrWhiteSpace(StDraftExeName)) return;
+
+        var schedule = StDraftUseCustomSchedule ? BuildStDraftSchedule() : null;
+        var limit = new AppTimeLimit
+        {
+            ExeName         = StDraftExeName,
+            DisplayName     = string.IsNullOrWhiteSpace(StDraftDisplayName) ? StDraftExeName : StDraftDisplayName,
+            LimitType       = StDraftLimitType,
+            LimitMinutes    = StDraftLimitType == AppLimitType.DailyTotal
+                                  ? StParseHM(StDraftLimitHours, StDraftLimitMin)
+                                  : StParseInt(StDraftIntervalLimit, 20),
+            IntervalMinutes = StParseInt(StDraftIntervalPeriod, 60),
+            Schedule        = schedule
+        };
+
+        var existing = StAppLimits.FirstOrDefault(a =>
+            string.Equals(a.ExeName, StDraftExeName, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null) StAppLimits.Remove(existing);
+
+        StAppLimits.Add(new AppTimeLimitViewModel(limit, StRemoveAppLimit));
+        StIsAddingAppLimit = false;
+    }
+
+    // ── Builders ──────────────────────────────────────────────────────────────
+
+    private DateTime ComputedDeadline()
+    {
+        int.TryParse(DeadlineHour, out int h);
+        int.TryParse(DeadlineMinute, out int m);
+        h = Math.Clamp(h, 1, 12);
+        m = Math.Clamp(m, 0, 59);
+        if (DeadlineAmPm == "PM" && h != 12) h += 12;
+        else if (DeadlineAmPm == "AM" && h == 12) h = 0;
+        return DeadlineDate.Date + new TimeSpan(h, m, 0);
+    }
+
+    internal ScreenTimeConfig BuildScreenTimeConfig() => new()
+    {
+        EnableDailyLimit  = StEnableDailyLimit,
+        DailyLimitMinutes = StParseHM(StDailyLimitHours, StDailyLimitMin),
+        DailySchedule     = StDailyUseCustomSchedule ? BuildStGlobalSchedule() : null,
+        AppLimits         = StAppLimits.Select(a => a.ToModel()).ToList()
+    };
+
+    private ScreenTimeSchedule BuildStGlobalSchedule() => new()
+    {
+        ActiveDays = _stGlobalDays,
+        StartTime  = StParseTimeTo(StGlobalStartHour, StGlobalStartMinute, StGlobalStartAmPm),
+        EndTime    = StParseTimeTo(StGlobalEndHour,   StGlobalEndMinute,   StGlobalEndAmPm)
+    };
+
+    private ScreenTimeSchedule BuildStDraftSchedule() => new()
+    {
+        ActiveDays = _stDraftDays,
+        StartTime  = StParseTimeTo(StDraftStartHour, StDraftStartMinute, StDraftStartAmPm),
+        EndTime    = StParseTimeTo(StDraftEndHour,   StDraftEndMinute,   StDraftEndAmPm)
+    };
+
+    // ── Day flag helpers ──────────────────────────────────────────────────────
+
+    private static bool GetDay(DayOfWeekFlags flags, DayOfWeekFlags flag)
+        => (flags & flag) != 0;
+
+    private void SetDay(ref DayOfWeekFlags flags, DayOfWeekFlags flag, bool value, string propName)
+    {
+        if (value) flags |= flag; else flags &= ~flag;
+        OnPropertyChanged(propName);
+    }
+
+    private void StRefreshDayProps(string prefix)
+    {
+        foreach (var s in new[] { "Mon","Tue","Wed","Thu","Fri","Sat","Sun" })
+            OnPropertyChanged(prefix + s);
+    }
+
+    // ── Time helpers ──────────────────────────────────────────────────────────
+
+    private static TimeOnly? StParseTimeTo(string hour, string minute, string ampm)
+    {
+        if (!int.TryParse(hour, out int h) || !int.TryParse(minute, out int m)) return null;
+        h = Math.Clamp(h, 1, 12);
+        m = Math.Clamp(m, 0, 59);
+        if (ampm == "PM" && h != 12) h += 12;
+        else if (ampm == "AM" && h == 12) h = 0;
+        return new TimeOnly(h, m);
+    }
+
+    private static (string hour, string minute, string ampm) StToTimeFields(TimeOnly? t)
+    {
+        if (t is null) return ("12", "00", "AM");
+        int h   = t.Value.Hour;
+        string ap = h < 12 ? "AM" : "PM";
+        h = h % 12 == 0 ? 12 : h % 12;
+        return (h.ToString(), t.Value.Minute.ToString("00"), ap);
+    }
+
+    private static int StParseHM(string h, string m)
+    {
+        int.TryParse(h, out int hours);
+        int.TryParse(m, out int mins);
+        return Math.Max(1, hours * 60 + mins);
+    }
+
+    private static int StParseInt(string s, int fallback)
+        => int.TryParse(s, out int v) && v > 0 ? v : fallback;
+
+    private static (string hours, string mins) StSplitMinutes(int total)
+        => ((total / 60).ToString(), (total % 60).ToString());
 }

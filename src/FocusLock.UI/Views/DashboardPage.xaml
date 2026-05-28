@@ -23,10 +23,6 @@
                            Foreground="#6C7086" HorizontalAlignment="Center" Margin="0,4,0,0"/>
             </StackPanel>
             <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Orientation="Horizontal">
-                <Button Content="⏱" Command="{Binding OpenScreenTimeCommand}"
-                        Background="Transparent" Foreground="#6C7086" FontSize="20"
-                        BorderThickness="0" Cursor="Hand" Padding="4" Margin="0,0,4,0"
-                        ToolTip="Screen Time"/>
                 <Button Content="⚙" Command="{Binding OpenSettingsCommand}"
                         Background="Transparent" Foreground="#6C7086" FontSize="20"
                         BorderThickness="0" Cursor="Hand" Padding="4"

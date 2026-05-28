@@ -44,6 +44,64 @@ dotnet publish "$root\src\FocusLock.Service" -c $Configuration -o $publishAll --
 if ($LASTEXITCODE -ne 0) { Fail "FocusLock.Service publish failed." }
 Ok "FocusLock.Service published."
 
+# ── Code signing setup ───────────────────────────────────────────────────────
+Step "Setting up code signing"
+
+$signTool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" `
+    -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -match "x64" } |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1 -ExpandProperty FullName
+
+$signingCert = $null
+if ($null -ne $signTool) {
+    $signingCert = Get-ChildItem "Cert:\CurrentUser\My" -CodeSigningCert |
+        Where-Object { $_.Subject -match "Brett Tomita" -and $_.NotAfter -gt (Get-Date) } |
+        Select-Object -First 1
+
+    if ($null -eq $signingCert) {
+        Write-Host "    Creating self-signed code signing certificate for 'Brett Tomita'..." -ForegroundColor Yellow
+        $signingCert = New-SelfSignedCertificate `
+            -Type CodeSigningCert `
+            -Subject "CN=Brett Tomita" `
+            -HashAlgorithm SHA256 `
+            -CertStoreLocation "Cert:\CurrentUser\My" `
+            -NotAfter (Get-Date).AddYears(10)
+    }
+
+    # Trust the cert so UAC shows "Brett Tomita" instead of "Unknown"
+    foreach ($storeName in @("Root", "TrustedPublisher")) {
+        $store = New-Object System.Security.Cryptography.X509Certificates.X509Store($storeName, "LocalMachine")
+        try {
+            $store.Open("ReadWrite")
+            if (-not ($store.Certificates | Where-Object { $_.Thumbprint -eq $signingCert.Thumbprint })) {
+                $store.Add($signingCert)
+            }
+        } catch {
+            Write-Host "    WARNING: Could not add cert to $storeName store: $_" -ForegroundColor Yellow
+        } finally {
+            $store.Close()
+        }
+    }
+
+    Ok "Code signing ready: $($signingCert.Subject)"
+} else {
+    Write-Host "    WARNING: signtool.exe not found. Skipping code signing." -ForegroundColor Yellow
+}
+
+function SignFiles([string[]]$paths) {
+    if ($null -eq $signingCert -or $null -eq $signTool) { return }
+    foreach ($path in $paths) {
+        if (-not (Test-Path $path)) { continue }
+        & $signTool sign /sha1 $signingCert.Thumbprint /fd SHA256 /q $path
+        if ($LASTEXITCODE -eq 0) { Ok "Signed: $(Split-Path $path -Leaf)" }
+        else { Write-Host "    WARNING: Could not sign $(Split-Path $path -Leaf)" -ForegroundColor Yellow }
+    }
+}
+
+# Sign all published executables
+SignFiles @(Get-ChildItem $publishAll -Filter "FocusLock*.exe" | Select-Object -ExpandProperty FullName)
+
 # ── Isolate service exe ───────────────────────────────────────────────────────
 #
 # WiX Package.wxs defines FocusLock.Service.exe separately with ServiceInstall /
@@ -68,6 +126,9 @@ if ($null -eq $msi) { Fail "MSI not found after build." }
 
 Ok "Installer ready:"
 Write-Host "    $($msi.FullName)" -ForegroundColor Yellow
+
+# Sign the MSI
+SignFiles @($msi.FullName)
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 $size = [math]::Round($msi.Length / 1MB, 2)

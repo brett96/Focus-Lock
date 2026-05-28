@@ -152,13 +152,10 @@
                                        VerticalAlignment="Center" Margin="4,0,0,0"/>
                         </StackPanel>
 
-                        <!-- Schedule mode radios -->
-                        <RadioButton Content="Active all day, every day"
-                                     IsChecked="{Binding DailyAllDay}"
-                                     GroupName="DailySchedule" Foreground="#CDD6F4" FontSize="13" Margin="0,0,0,6"/>
-                        <RadioButton Content="Active during a set schedule:"
-                                     IsChecked="{Binding IsCustomSchedule, Mode=TwoWay}"
-                                     GroupName="DailySchedule" Foreground="#CDD6F4" FontSize="13" Margin="0,0,0,10"/>
+                        <!-- Schedule toggle -->
+                        <CheckBox Content="Active during a set schedule:"
+                                  IsChecked="{Binding DailyUseCustomSchedule}"
+                                  Foreground="#CDD6F4" FontSize="13" Margin="0,0,0,10"/>
 
                         <!-- Custom schedule picker -->
                         <StackPanel Visibility="{Binding ShowSchedulePicker, Converter={StaticResource BoolToVisibility}}">
@@ -220,9 +217,9 @@
                                     <TextBlock Text="{Binding DisplayName}" Foreground="#CDD6F4"
                                                FontSize="13" FontWeight="SemiBold"/>
                                     <TextBlock Foreground="#6C7086" FontSize="12" Margin="0,2,0,0">
-                                        <Run Text="{Binding LimitSummary}"/>
+                                        <Run Text="{Binding LimitSummary, Mode=OneWay}"/>
                                         <Run Text=" · "/>
-                                        <Run Text="{Binding ScheduleSummary}"/>
+                                        <Run Text="{Binding ScheduleSummary, Mode=OneWay}"/>
                                     </TextBlock>
                                 </StackPanel>
                                 <Button Content="✕" HorizontalAlignment="Right"

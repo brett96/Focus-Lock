@@ -125,9 +125,6 @@ public partial class DashboardViewModel : ObservableObject
     private void OpenSettings() => _nav.NavigateTo(new Views.SettingsPage());
 
     [RelayCommand]
-    private void OpenScreenTime() => _nav.NavigateTo(new Views.ScreenTimePage());
-
-    [RelayCommand]
     private async Task EndSessionAsync()
     {
         if (SessionMode == SessionMode.Strict) return;
