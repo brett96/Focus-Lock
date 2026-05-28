@@ -152,15 +152,48 @@ public class AppBlocker(ILogger log)
         }
     }
 
+    /// <summary>
+    /// Scans every IFEO key and removes any Debugger value that points to our stub.
+    /// Used by the emergency reset to clean up stale entries left by a prior session.
+    /// </summary>
+    public void RemoveAllStubIfeoKeys()
+    {
+        try
+        {
+            using var ifeoBase = Registry.LocalMachine.OpenSubKey(IfeoBase, writable: true);
+            if (ifeoBase is null) return;
+            foreach (var name in ifeoBase.GetSubKeyNames())
+            {
+                try
+                {
+                    using var key = ifeoBase.OpenSubKey(name, writable: true);
+                    if (key is null) continue;
+                    var debugger = key.GetValue(DebuggerValue) as string;
+                    if (string.Equals(debugger, StubPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        key.DeleteValue(DebuggerValue, throwOnMissingValue: false);
+                        log.LogInformation("Cleared stale IFEO entry for {Exe}.", name);
+                    }
+                }
+                catch (Exception ex) { log.LogWarning(ex, "Could not clear IFEO for {Exe}.", name); }
+            }
+        }
+        catch (Exception ex) { log.LogError(ex, "Failed to enumerate IFEO keys for reset."); }
+    }
+
     private void WriteIfeo(string exeName, FocusSession session)
     {
         try
         {
             using var key = Registry.LocalMachine.CreateSubKey($@"{IfeoBase}\{exeName}", writable: true);
             // Save the pre-existing Debugger value so we can restore it on session end.
+            // If the existing value is already our stub (stale from a prior session), treat it
+            // as absent — otherwise RestoreIfeo would re-set the stub and leave the app blocked.
             if (!session.IfeoPreExistingDebuggers.ContainsKey(exeName))
             {
                 var existing = key.GetValue(DebuggerValue) as string;
+                if (string.Equals(existing, StubPath, StringComparison.OrdinalIgnoreCase))
+                    existing = null;
                 session.IfeoPreExistingDebuggers[exeName] = existing;
             }
             key.SetValue(DebuggerValue, StubPath, RegistryValueKind.String);

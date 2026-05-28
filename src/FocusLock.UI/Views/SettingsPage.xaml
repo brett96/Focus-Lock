@@ -35,6 +35,32 @@
             </StackPanel>
         </Border>
 
+        <!-- Emergency Reset -->
+        <Border Background="#313244" CornerRadius="8" Padding="18,14" Margin="0,0,0,32">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                    <TextBlock Text="Emergency Reset" Foreground="#F38BA8" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="#6C7086" FontSize="12" Margin="0,4,0,0">
+                        Forcefully clears all app blocks and website restrictions. Use this if a session ended
+                        but apps or sites are still blocked. Not available during an active session.
+                    </TextBlock>
+                    <TextBlock Text="{Binding ResetMessage}" TextWrapping="Wrap"
+                               Foreground="#A6ADC8" FontSize="12" Margin="0,8,0,0"
+                               Visibility="{Binding HasResetMessage, Converter={StaticResource BoolToVisibility}}"/>
+                </StackPanel>
+
+                <Button Grid.Column="1" Content="Reset"
+                        Command="{Binding ForceResetCommand}"
+                        Style="{StaticResource DangerButton}"
+                        VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
         <Button Content="← Back" Command="{Binding BackCommand}"
                 Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"/>
     </StackPanel>

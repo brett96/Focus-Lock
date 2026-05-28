@@ -79,7 +79,21 @@ public class SessionWorker : BackgroundService
                 var msg = await PipeFraming.ReadMessageAsync(pipe, ct);
                 if (msg is null) return;
 
-                var response = await DispatchAsync(msg, ct);
+                PipeMessage response;
+                try
+                {
+                    response = await DispatchAsync(msg, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return; // service is stopping; close connection gracefully
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(ex, "Dispatch error for message type {Type}.", msg.Type);
+                    response = BuildReply(new AckResponse(false, "An internal service error occurred."));
+                }
+
                 await PipeFraming.WriteMessageAsync(pipe, response, ct);
             }
             catch (Exception ex)
@@ -96,11 +110,12 @@ public class SessionWorker : BackgroundService
             PipeConstants.GetStatus          => BuildReply(_manager.GetStatus()),
             PipeConstants.GetSessionInfo     => BuildReply(_manager.GetSessionInfo()),
             PipeConstants.StartSession       => BuildReply(await _manager.StartSessionAsync(msg, ct)),
-            PipeConstants.EndSession         => BuildReply(_manager.EndSessionRequest(msg)),
+            PipeConstants.EndSession         => BuildReply(await _manager.EndSessionRequestAsync(msg, ct)),
             PipeConstants.IsBlocked          => BuildReply(_manager.CheckIsBlocked(msg)),
             PipeConstants.GetScreenTimeConfig  => BuildReply(_manager.ScreenTime.HandleGetConfig()),
             PipeConstants.SetScreenTimeConfig  => BuildReply(await _manager.HandleSetScreenTimeConfigAsync(msg)),
             PipeConstants.GetScreenTimeStatus  => BuildReply(_manager.ScreenTime.HandleGetStatus()),
+            PipeConstants.ForceReset           => BuildReply(_manager.HandleForceReset()),
             _ => BuildReply(new AckResponse(false, $"Unknown message type: {msg.Type}"))
         };
     }

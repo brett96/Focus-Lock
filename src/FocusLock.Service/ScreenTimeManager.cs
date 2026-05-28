@@ -232,6 +232,13 @@ public sealed class ScreenTimeManager(ILogger log)
                 _stateDirty = true;
                 log.LogInformation("App {Exe} daily limit reached ({Min} min).",
                     limit.ExeName, limit.LimitMinutes);
+                try
+                {
+                    new SessionNotifier(log).ShowMessage(
+                        "Focus Lock — App Time Limit",
+                        $"{limit.DisplayName} has reached its {limit.LimitMinutes}-minute daily limit and will be closed.");
+                }
+                catch (Exception ex) { log.LogDebug(ex, "Failed to show app limit notification."); }
             }
         }
 
@@ -269,6 +276,13 @@ public sealed class ScreenTimeManager(ILogger log)
                 _stateDirty = true;
                 log.LogInformation("App {Exe} interval limit reached ({Min} min per {Int} min).",
                     limit.ExeName, limit.LimitMinutes, limit.IntervalMinutes);
+                try
+                {
+                    new SessionNotifier(log).ShowMessage(
+                        "Focus Lock — App Time Limit",
+                        $"{limit.DisplayName} has reached its {limit.LimitMinutes}-minute limit for this {limit.IntervalMinutes}-minute period and will be closed.");
+                }
+                catch (Exception ex) { log.LogDebug(ex, "Failed to show app limit notification."); }
             }
         }
 

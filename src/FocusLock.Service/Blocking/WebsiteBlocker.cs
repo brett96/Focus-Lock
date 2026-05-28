@@ -139,6 +139,38 @@ public class WebsiteBlocker(ILogger log)
         }
     }
 
+    /// <summary>
+    /// Removes every FocusLock sentinel block from the hosts file regardless of session ID.
+    /// Also deletes all backup files. Used by the emergency reset.
+    /// </summary>
+    public void RemoveAllFocusLockBlocks()
+    {
+        HostsMutex.WaitOne();
+        try
+        {
+            var lines = File.ReadAllLines(HostsFile).ToList();
+            var filtered = new List<string>();
+            bool inBlock = false;
+            foreach (var line in lines)
+            {
+                if (line.TrimEnd().StartsWith("# BEGIN FocusLock session")) { inBlock = true; continue; }
+                if (line.TrimEnd().StartsWith("# END FocusLock session"))   { inBlock = false; continue; }
+                if (!inBlock) filtered.Add(line);
+            }
+            File.WriteAllLines(HostsFile, filtered);
+            FlushDns();
+
+            if (Directory.Exists(DataDir))
+            {
+                foreach (var f in Directory.GetFiles(DataDir, "hosts.backup.*.txt"))
+                    try { File.Delete(f); } catch { }
+            }
+            log.LogInformation("All FocusLock hosts blocks removed.");
+        }
+        catch (Exception ex) { log.LogError(ex, "Failed to remove all FocusLock hosts blocks."); }
+        finally { HostsMutex.ReleaseMutex(); }
+    }
+
     private void RemoveSentinelBlock(Guid sessionId)
     {
         string begin = $"# BEGIN FocusLock session {sessionId}";

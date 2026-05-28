@@ -23,13 +23,19 @@ public class AppMonitorWorker : BackgroundService
         {
             try
             {
-                var s = _manager.Session;
-                if (s?.Status == SessionStatus.Active)
+                await _manager.SessionLock.WaitAsync(ct);
+                try
                 {
-                    _manager.AppBlocker.KillRunningBlockedApps(s);
-                    _manager.AppBlocker.VerifyAndRepairIfeo(s);
+                    var s = _manager.Session;
+                    if (s?.Status == SessionStatus.Active)
+                    {
+                        _manager.AppBlocker.KillRunningBlockedApps(s);
+                        _manager.AppBlocker.VerifyAndRepairIfeo(s);
+                    }
                 }
+                finally { _manager.SessionLock.Release(); }
             }
+            catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
                 _log.LogError(ex, "App monitor error.");

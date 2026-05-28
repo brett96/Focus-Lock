@@ -49,4 +49,7 @@ public class ServiceClient
 
     public Task<ScreenTimeStatusResponse?> GetScreenTimeStatusAsync(CancellationToken ct = default)
         => SendAsync<ScreenTimeStatusResponse>(PipeConstants.GetScreenTimeStatus, ct: ct);
+
+    public Task<AckResponse?> ForceResetAsync(CancellationToken ct = default)
+        => SendAsync<AckResponse>(PipeConstants.ForceReset, ct: ct);
 }

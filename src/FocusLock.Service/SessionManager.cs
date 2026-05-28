@@ -172,15 +172,23 @@ public class SessionManager
         }
     }
 
-    public AckResponse EndSessionRequest(PipeMessage msg)
+    public async Task<AckResponse> EndSessionRequestAsync(PipeMessage msg, CancellationToken ct)
     {
-        var s = _session;
-        if (s is null) return new AckResponse(false, "No active session.");
-        if (s.Mode == SessionMode.Strict)
-            return new AckResponse(false, "Strict mode sessions cannot be ended early.");
+        await _sessionLock.WaitAsync(ct);
+        try
+        {
+            var s = _session;
+            if (s is null) return new AckResponse(false, "No active session.");
+            if (s.Mode == SessionMode.Strict)
+                return new AckResponse(false, "Strict mode sessions cannot be ended early.");
 
-        EndSession(s);
-        return new AckResponse(true);
+            EndSession(s);
+            return new AckResponse(true);
+        }
+        finally
+        {
+            _sessionLock.Release();
+        }
     }
 
     public IsBlockedResponse CheckIsBlocked(PipeMessage msg)
@@ -195,6 +203,28 @@ public class SessionManager
         return match is not null
             ? new IsBlockedResponse(true, _session.DeadlineUtc, match.DisplayName)
             : new IsBlockedResponse(false, null, null);
+    }
+
+    public AckResponse HandleForceReset()
+    {
+        var s = _session;
+        if (s?.Status == SessionStatus.Active)
+            return new AckResponse(false, "Cannot reset while a focus session is active. End the session first.");
+        try
+        {
+            _appBlocker.RemoveAllStubIfeoKeys();
+            _websiteBlocker.RemoveAllFocusLockBlocks();
+            _blockPageServer.Stop();
+            SessionRepository.Save(null);
+            _session = null;
+            _log.LogInformation("Force reset completed.");
+            return new AckResponse(true);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Force reset failed.");
+            return new AckResponse(false, $"Reset failed: {ex.Message}");
+        }
     }
 
     public async Task<AckResponse> HandleSetScreenTimeConfigAsync(PipeMessage msg)
