@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FocusLock.Core.Models;
+using FocusLock.Core.ScreenTime;
 
 namespace FocusLock.Core.Storage;
 
@@ -13,6 +14,7 @@ public static class ScreenTimeConfigRepository
 
     public static void Save(ScreenTimeConfig config)
     {
+        ScreenTimeConfigNormalizer.Normalize(config);
         Directory.CreateDirectory(DataDir);
         File.WriteAllText(ConfigFile, JsonSerializer.Serialize(config));
     }
@@ -22,8 +24,10 @@ public static class ScreenTimeConfigRepository
         if (!File.Exists(ConfigFile)) return new ScreenTimeConfig();
         try
         {
-            return JsonSerializer.Deserialize<ScreenTimeConfig>(File.ReadAllText(ConfigFile))
+            var config = JsonSerializer.Deserialize<ScreenTimeConfig>(File.ReadAllText(ConfigFile))
                 ?? new ScreenTimeConfig();
+            ScreenTimeConfigNormalizer.Normalize(config);
+            return config;
         }
         catch { return new ScreenTimeConfig(); }
     }

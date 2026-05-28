@@ -102,7 +102,7 @@ Enforced in `SetupViewModel.StartSessionAsync` and `SessionManager.StartSessionA
 - Deadline ≥ 5 minutes ahead (UI) / ≥ 1 minute (service)
 - Deadline ≤ **1 year** ahead
 - Strict mode requires consent checkbox
-- At least one of: blocked apps, blocked sites, or screen time limits (`StEnableDailyLimit` or `StAppLimits`)
+- At least one of: blocked apps, blocked sites, or screen time limits (`StDailyLimits` or `StAppLimits`)
 - Device **daily** screen time limit: minimum **5 minutes** (`ScreenTimeConfig.MinDailyLimitMinutes`); per-app limits are unchanged (still ≥ 1 minute)
 
 Default deadline on setup page: **now + 1 hour**. `DatePicker` uses `DisplayDateEnd = Today + 1 year`.
@@ -118,7 +118,7 @@ WPF MVVM app using `CommunityToolkit.Mvvm` (`[ObservableProperty]`, `[RelayComma
 
 Pages: `DashboardPage` (primary idle/active UI), `SetupPage` (wizard), `ActiveSessionPage` (legacy/alternate), `ScreenTimePage`, `SettingsPage`.
 
-**Screen Time enforcement**: `ScreenTimeManager.OnSessionStarted()` / `OnSessionEnded()` from `SessionManager`. Tick loop no-op when idle. Per-app limits use `limit.Schedule ?? ScreenTimeSchedule.Always` — **never** inherit `DailySchedule` (device daily quota only). Process detection: running exe set (MainModule + process name) plus foreground window fallback. `HandleGetStatus` reads state under the same lock as `Tick`. Per-app over-limit uses `AppBlocker.ApplyScreenTimeBlock`. `IsBlockedResponse` includes optional `BlockMessage` for stub toasts.
+**Screen Time enforcement**: `ScreenTimeManager` tracks multiple `DailyLimits` (each with its own schedule and per-rule usage in `DailyRuleUsage`). At most one daily rule is active at any instant; overlap is prevented at setup. Per-app limits use rule `Id` for state; same app may have multiple non-overlapping limits.
 
 **End session early**: `MessageBox` Yes/No, then `RequestEndSessionUntilAcknowledgedAsync` (up to 3 IPC attempts) and `WaitForSessionIdleAsync` (poll `GetSessionInfo` until idle, re-send `EndSession` if still active). Timers paused while ending. `ActiveSessionViewModel` still has a simpler end path if that page is used.
 

@@ -2,6 +2,7 @@ namespace FocusLock.Core.Models;
 
 public class AppTimeLimit
 {
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string ExeName { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public AppLimitType LimitType { get; set; }

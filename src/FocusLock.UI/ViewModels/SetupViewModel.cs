@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 using FocusLock.Core.Blocking;
 using FocusLock.Core.Ipc;
 using FocusLock.Core.Models;
+using FocusLock.Core.ScreenTime;
 using FocusLock.UI.Services;
 using FocusLock.UI.Views;
 using Microsoft.Extensions.DependencyInjection;
@@ -74,7 +75,7 @@ public partial class SetupViewModel : ObservableObject
 
     public bool HasError        => !string.IsNullOrEmpty(ErrorMessage);
     public bool IsNotBusy       => !IsBusy;
-    public bool HasScreenTimeLimits => StEnableDailyLimit || StAppLimits.Count > 0;
+    public bool HasScreenTimeLimits => StDailyLimits.Count > 0 || StAppLimits.Count > 0;
     public bool HasNoFilteredApps => !IsLoadingApps && !FilteredApps.Any();
 
     public string AppDropdownLabel => BlockedApps.Count == 0
@@ -91,55 +92,67 @@ public partial class SetupViewModel : ObservableObject
     public ObservableCollection<BlockedSite>   BlockedSites  { get; } = new();
     public ObservableCollection<SelectableWebsiteCategory> WebsiteCategories { get; } = new();
 
-    // ── Screen Time — daily limit ─────────────────────────────────────────────
+    // ── Screen Time — daily limits list ───────────────────────────────────────
+
+    public ObservableCollection<DailyTimeLimitViewModel> StDailyLimits { get; } = new();
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasScreenTimeLimits))]
-    private bool _stEnableDailyLimit;
-    [ObservableProperty] private string _stDailyLimitHours = "2";
-    [ObservableProperty] private string _stDailyLimitMin   = "0";
+    [NotifyPropertyChangedFor(nameof(StIsNotAddingDaily))]
+    private bool _stIsAddingDailyLimit;
+
+    public bool StIsNotAddingDaily => !StIsAddingDailyLimit;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StShowSchedulePicker))]
-    private bool _stDailyUseCustomSchedule;
-
-    public bool StShowSchedulePicker => StDailyUseCustomSchedule;
-
-    // ── Screen Time — global schedule days ───────────────────────────────────
-
-    private DayOfWeekFlags _stGlobalDays = (DayOfWeekFlags)127;
-
-    public bool StGlobalMon { get => GetDay(_stGlobalDays, DayOfWeekFlags.Monday);    set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Monday,    value, nameof(StGlobalMon)); }
-    public bool StGlobalTue { get => GetDay(_stGlobalDays, DayOfWeekFlags.Tuesday);   set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Tuesday,   value, nameof(StGlobalTue)); }
-    public bool StGlobalWed { get => GetDay(_stGlobalDays, DayOfWeekFlags.Wednesday); set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Wednesday, value, nameof(StGlobalWed)); }
-    public bool StGlobalThu { get => GetDay(_stGlobalDays, DayOfWeekFlags.Thursday);  set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Thursday,  value, nameof(StGlobalThu)); }
-    public bool StGlobalFri { get => GetDay(_stGlobalDays, DayOfWeekFlags.Friday);    set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Friday,    value, nameof(StGlobalFri)); }
-    public bool StGlobalSat { get => GetDay(_stGlobalDays, DayOfWeekFlags.Saturday);  set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Saturday,  value, nameof(StGlobalSat)); }
-    public bool StGlobalSun { get => GetDay(_stGlobalDays, DayOfWeekFlags.Sunday);    set => SetDay(ref _stGlobalDays, DayOfWeekFlags.Sunday,    value, nameof(StGlobalSun)); }
-
-    // ── Screen Time — global schedule time range ──────────────────────────────
-
-    [ObservableProperty] private string _stGlobalStartHour   = "9";
-    [ObservableProperty] private string _stGlobalStartMinute = "00";
+    [NotifyPropertyChangedFor(nameof(HasStDailyLimitAddError))]
+    private string _stDailyLimitAddError = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StGlobalStartIsAm))]
-    [NotifyPropertyChangedFor(nameof(StGlobalStartIsPm))]
-    private string _stGlobalStartAmPm = "AM";
+    [NotifyPropertyChangedFor(nameof(HasStAppLimitAddError))]
+    private string _stAppLimitAddError = string.Empty;
 
-    public bool StGlobalStartIsAm { get => StGlobalStartAmPm == "AM"; set { if (value) StGlobalStartAmPm = "AM"; } }
-    public bool StGlobalStartIsPm { get => StGlobalStartAmPm == "PM"; set { if (value) StGlobalStartAmPm = "PM"; } }
+    public bool HasStDailyLimitAddError => !string.IsNullOrEmpty(StDailyLimitAddError);
+    public bool HasStAppLimitAddError   => !string.IsNullOrEmpty(StAppLimitAddError);
 
-    [ObservableProperty] private string _stGlobalEndHour   = "5";
-    [ObservableProperty] private string _stGlobalEndMinute = "00";
+    [ObservableProperty] private string _stDraftDailyLimitHours = "2";
+    [ObservableProperty] private string _stDraftDailyLimitMin   = "0";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StGlobalEndIsAm))]
-    [NotifyPropertyChangedFor(nameof(StGlobalEndIsPm))]
-    private string _stGlobalEndAmPm = "PM";
+    [NotifyPropertyChangedFor(nameof(StShowDailyDraftSchedulePicker))]
+    private bool _stDraftDailyUseCustomSchedule;
 
-    public bool StGlobalEndIsAm { get => StGlobalEndAmPm == "AM"; set { if (value) StGlobalEndAmPm = "AM"; } }
-    public bool StGlobalEndIsPm { get => StGlobalEndAmPm == "PM"; set { if (value) StGlobalEndAmPm = "PM"; } }
+    public bool StShowDailyDraftSchedulePicker => StDraftDailyUseCustomSchedule;
+
+    private DayOfWeekFlags _stDailyDraftDays = (DayOfWeekFlags)127;
+
+    public bool StDailyDraftMon { get => GetDay(_stDailyDraftDays, DayOfWeekFlags.Monday);    set => SetDay(ref _stDailyDraftDays, DayOfWeekFlags.Monday,    value, nameof(StDailyDraftMon)); }
+    public bool StDailyDraftTue { get => GetDay(_stDailyDraftDays, DayOfWeekFlags.Tuesday);   set => SetDay(ref _stDailyDraftDays, DayOfWeekFlags.Tuesday,   value, nameof(StDailyDraftTue)); }
+    public bool StDailyDraftWed { get => GetDay(_stDailyDraftDays, DayOfWeekFlags.Wednesday); set => SetDay(ref _stDailyDraftDays, DayOfWeekFlags.Wednesday, value, nameof(StDailyDraftWed)); }
+    public bool StDailyDraftThu { get => GetDay(_stDailyDraftDays, DayOfWeekFlags.Thursday);  set => SetDay(ref _stDailyDraftDays, DayOfWeekFlags.Thursday,  value, nameof(StDailyDraftThu)); }
+    public bool StDailyDraftFri { get => GetDay(_stDailyDraftDays, DayOfWeekFlags.Friday);    set => SetDay(ref _stDailyDraftDays, DayOfWeekFlags.Friday,    value, nameof(StDailyDraftFri)); }
+    public bool StDailyDraftSat { get => GetDay(_stDailyDraftDays, DayOfWeekFlags.Saturday);  set => SetDay(ref _stDailyDraftDays, DayOfWeekFlags.Saturday,  value, nameof(StDailyDraftSat)); }
+    public bool StDailyDraftSun { get => GetDay(_stDailyDraftDays, DayOfWeekFlags.Sunday);    set => SetDay(ref _stDailyDraftDays, DayOfWeekFlags.Sunday,    value, nameof(StDailyDraftSun)); }
+
+    [ObservableProperty] private string _stDailyDraftStartHour   = "9";
+    [ObservableProperty] private string _stDailyDraftStartMinute = "00";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StDailyDraftStartIsAm))]
+    [NotifyPropertyChangedFor(nameof(StDailyDraftStartIsPm))]
+    private string _stDailyDraftStartAmPm = "AM";
+
+    public bool StDailyDraftStartIsAm { get => StDailyDraftStartAmPm == "AM"; set { if (value) StDailyDraftStartAmPm = "AM"; } }
+    public bool StDailyDraftStartIsPm { get => StDailyDraftStartAmPm == "PM"; set { if (value) StDailyDraftStartAmPm = "PM"; } }
+
+    [ObservableProperty] private string _stDailyDraftEndHour   = "5";
+    [ObservableProperty] private string _stDailyDraftEndMinute = "00";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StDailyDraftEndIsAm))]
+    [NotifyPropertyChangedFor(nameof(StDailyDraftEndIsPm))]
+    private string _stDailyDraftEndAmPm = "PM";
+
+    public bool StDailyDraftEndIsAm { get => StDailyDraftEndAmPm == "AM"; set { if (value) StDailyDraftEndAmPm = "AM"; } }
+    public bool StDailyDraftEndIsPm { get => StDailyDraftEndAmPm == "PM"; set { if (value) StDailyDraftEndAmPm = "PM"; } }
 
     // ── Screen Time — app limits list ─────────────────────────────────────────
 
@@ -238,6 +251,7 @@ public partial class SetupViewModel : ObservableObject
             WebsiteCategories.Add(new SelectableWebsiteCategory(name, domains, OnWebsiteCategoryToggled));
 
         BlockedApps.CollectionChanged += (_, _) => OnPropertyChanged(nameof(AppDropdownLabel));
+        StDailyLimits.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasScreenTimeLimits));
         StAppLimits.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasScreenTimeLimits));
         _ = LoadAvailableAppsAsync();
         _ = LoadScreenTimeConfigAsync();
@@ -300,26 +314,18 @@ public partial class SetupViewModel : ObservableObject
 
     private void LoadScreenTimeConfig(ScreenTimeConfig config)
     {
-        StEnableDailyLimit = config.EnableDailyLimit;
-        var dailyMinutes = config.DailyLimitMinutes;
-        if (config.EnableDailyLimit && dailyMinutes < ScreenTimeConfig.MinDailyLimitMinutes)
-            dailyMinutes = ScreenTimeConfig.MinDailyLimitMinutes;
-        (StDailyLimitHours, StDailyLimitMin) = StSplitMinutes(dailyMinutes);
+        ScreenTimeConfigNormalizer.Normalize(config);
 
-        StDailyUseCustomSchedule = config.DailySchedule is not null;
-        if (config.DailySchedule is not null)
-        {
-            _stGlobalDays = config.DailySchedule.ActiveDays;
-            (StGlobalStartHour, StGlobalStartMinute, StGlobalStartAmPm) = StToTimeFields(config.DailySchedule.StartTime);
-            (StGlobalEndHour,   StGlobalEndMinute,   StGlobalEndAmPm)   = StToTimeFields(config.DailySchedule.EndTime);
-            StRefreshDayProps("StGlobal");
-        }
+        StDailyLimits.Clear();
+        foreach (var rule in config.DailyLimits)
+            StDailyLimits.Add(new DailyTimeLimitViewModel(rule, StRemoveDailyLimit));
 
         StAppLimits.Clear();
         foreach (var limit in config.AppLimits)
             StAppLimits.Add(new AppTimeLimitViewModel(limit, StRemoveAppLimit));
     }
 
+    private void StRemoveDailyLimit(DailyTimeLimitViewModel vm) => StDailyLimits.Remove(vm);
     private void StRemoveAppLimit(AppTimeLimitViewModel vm) => StAppLimits.Remove(vm);
 
     // ── Focus Lock commands ───────────────────────────────────────────────────
@@ -445,9 +451,9 @@ public partial class SetupViewModel : ObservableObject
             ErrorMessage = "You must confirm consent to use Strict mode.";
             return;
         }
-        if (StEnableDailyLimit && StParseHMRaw(StDailyLimitHours, StDailyLimitMin) < ScreenTimeConfig.MinDailyLimitMinutes)
+        if (StDailyLimits.Any(d => d.LimitMinutes < ScreenTimeConfig.MinDailyLimitMinutes))
         {
-            ErrorMessage = $"Daily screen time limit must be at least {ScreenTimeConfig.MinDailyLimitMinutes} minutes.";
+            ErrorMessage = $"Each daily screen time limit must be at least {ScreenTimeConfig.MinDailyLimitMinutes} minutes.";
             return;
         }
 
@@ -486,8 +492,61 @@ public partial class SetupViewModel : ObservableObject
     // ── Screen Time commands ──────────────────────────────────────────────────
 
     [RelayCommand]
+    private void StShowAddDailyLimit()
+    {
+        StDailyLimitAddError       = string.Empty;
+        StIsAddingDailyLimit         = true;
+        StDraftDailyLimitHours       = "2";
+        StDraftDailyLimitMin         = "0";
+        StDraftDailyUseCustomSchedule = true;
+        _stDailyDraftDays            = (DayOfWeekFlags)127;
+        StRefreshDayProps("StDailyDraft");
+        StDailyDraftStartHour = "9"; StDailyDraftStartMinute = "00"; StDailyDraftStartAmPm = "AM";
+        StDailyDraftEndHour   = "5"; StDailyDraftEndMinute   = "00"; StDailyDraftEndAmPm   = "PM";
+    }
+
+    [RelayCommand]
+    private void StCancelAddDaily() => StIsAddingDailyLimit = false;
+
+    [RelayCommand]
+    private void StAddDailyLimit()
+    {
+        StDailyLimitAddError = string.Empty;
+
+        int limitMinutes = StParseDailyLimitMinutes(StDraftDailyLimitHours, StDraftDailyLimitMin);
+        if (limitMinutes < ScreenTimeConfig.MinDailyLimitMinutes)
+        {
+            StDailyLimitAddError = $"Daily limit must be at least {ScreenTimeConfig.MinDailyLimitMinutes} minutes.";
+            return;
+        }
+
+        var schedule = BuildStDailyDraftSchedule();
+        if (schedule.ActiveDays == DayOfWeekFlags.None)
+        {
+            StDailyLimitAddError = "Select at least one day for this daily limit.";
+            return;
+        }
+
+        var existing = StDailyLimits.Select(d => d.ToModel()).ToList();
+        if (ScreenTimeScheduleOverlap.TryFindDailyLimitOverlap(existing, schedule, out var overlapMsg))
+        {
+            StDailyLimitAddError = overlapMsg!;
+            return;
+        }
+
+        var rule = new DailyTimeLimit
+        {
+            LimitMinutes = limitMinutes,
+            Schedule     = schedule
+        };
+        StDailyLimits.Add(new DailyTimeLimitViewModel(rule, StRemoveDailyLimit));
+        StIsAddingDailyLimit = false;
+    }
+
+    [RelayCommand]
     private void StShowAddAppLimit()
     {
+        StAppLimitAddError    = string.Empty;
         StIsAddingAppLimit    = true;
         StDraftExeName        = string.Empty;
         StDraftDisplayName    = string.Empty;
@@ -534,9 +593,25 @@ public partial class SetupViewModel : ObservableObject
     [RelayCommand]
     private void StAddAppLimit()
     {
+        StAppLimitAddError = string.Empty;
         if (string.IsNullOrWhiteSpace(StDraftExeName)) return;
 
         var schedule = StDraftUseCustomSchedule ? BuildStDraftSchedule() : null;
+        var candidateSchedule = schedule ?? ScreenTimeSchedule.Always;
+        if (schedule is not null && candidateSchedule.ActiveDays == DayOfWeekFlags.None)
+        {
+            StAppLimitAddError = "Select at least one day for this app limit schedule.";
+            return;
+        }
+
+        var existing = StAppLimits.Select(a => a.ToModel()).ToList();
+        if (ScreenTimeScheduleOverlap.TryFindAppLimitOverlap(
+                existing, StDraftExeName, candidateSchedule, out var overlapMsg))
+        {
+            StAppLimitAddError = overlapMsg!;
+            return;
+        }
+
         var limit = new AppTimeLimit
         {
             ExeName         = StDraftExeName,
@@ -548,10 +623,6 @@ public partial class SetupViewModel : ObservableObject
             IntervalMinutes = StParseInt(StDraftIntervalPeriod, 60),
             Schedule        = schedule
         };
-
-        var existing = StAppLimits.FirstOrDefault(a =>
-            string.Equals(a.ExeName, StDraftExeName, StringComparison.OrdinalIgnoreCase));
-        if (existing is not null) StAppLimits.Remove(existing);
 
         StAppLimits.Add(new AppTimeLimitViewModel(limit, StRemoveAppLimit));
         StIsAddingAppLimit = false;
@@ -572,18 +643,24 @@ public partial class SetupViewModel : ObservableObject
 
     internal ScreenTimeConfig BuildScreenTimeConfig() => new()
     {
-        EnableDailyLimit  = StEnableDailyLimit,
-        DailyLimitMinutes = StParseDailyLimitMinutes(StDailyLimitHours, StDailyLimitMin),
-        DailySchedule     = StDailyUseCustomSchedule ? BuildStGlobalSchedule() : null,
-        AppLimits         = StAppLimits.Select(a => a.ToModel()).ToList()
+        DailyLimits = StDailyLimits.Select(d => d.ToModel()).ToList(),
+        AppLimits   = StAppLimits.Select(a => a.ToModel()).ToList()
     };
 
-    private ScreenTimeSchedule BuildStGlobalSchedule() => new()
+    private ScreenTimeSchedule BuildStDailyDraftSchedule()
     {
-        ActiveDays = _stGlobalDays,
-        StartTime  = StParseTimeTo(StGlobalStartHour, StGlobalStartMinute, StGlobalStartAmPm),
-        EndTime    = StParseTimeTo(StGlobalEndHour,   StGlobalEndMinute,   StGlobalEndAmPm)
-    };
+        if (!StDraftDailyUseCustomSchedule)
+        {
+            return new ScreenTimeSchedule { ActiveDays = _stDailyDraftDays };
+        }
+
+        return new ScreenTimeSchedule
+        {
+            ActiveDays = _stDailyDraftDays,
+            StartTime  = StParseTimeTo(StDailyDraftStartHour, StDailyDraftStartMinute, StDailyDraftStartAmPm),
+            EndTime    = StParseTimeTo(StDailyDraftEndHour,   StDailyDraftEndMinute,   StDailyDraftEndAmPm)
+        };
+    }
 
     private ScreenTimeSchedule BuildStDraftSchedule() => new()
     {

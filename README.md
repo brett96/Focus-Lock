@@ -23,7 +23,7 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
   - The user keeps their admin rights for all other purposes — no risk of being locked out of their own machine.
 - **Screen Time Limits** *(optional; enforced only during an active Focus Lock session)*
   - Limits are configured in the **New Focus Session** wizard (or saved ahead of time) and **only apply while a focus session is running** — same lifecycle as app/website blocking. When the session ends, counters reset and enforcement stops.
-  - **Daily screen time limit** — maximum logged-in time during the session. When reached, the service disconnects the Windows session after a 5-second notification.
+  - **Daily screen time limit** — maximum logged-in time during the session. You can add **multiple daily limits** with different day/time schedules (e.g. weekdays 9–5 vs. Saturday morning). Overlapping schedules are rejected at setup.
   - **Schedule-based activation** — limits can be restricted to specific days of the week and/or a time-of-day window (e.g. Monday–Friday 9 AM–5 PM). Outside the schedule window, limits do not accumulate or enforce.
   - **Per-app time limits** — each app can have its own limit and optional schedule (defaults to always on). These do **not** inherit the device daily-limit schedule unless you set a per-app schedule.
     - *Daily Total*: at most X minutes of use within the app's schedule window during the session.

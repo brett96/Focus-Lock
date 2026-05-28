@@ -32,9 +32,10 @@ public sealed class ScreenTimeManager
         _notifier   = new SessionNotifier(log);
         _getSession = getSession;
         _config     = ScreenTimeConfigRepository.Load();
-        if (!_config.EnableDailyLimit)
-            _config.DailySchedule = null;
     }
+
+    // Rule that triggered the current daily lockout (if any).
+    private string? _lockoutRuleId;
 
     // Tracks the "lockout notification was sent for this login" moment.
     private DateTime? _lockoutNotifiedAt;
@@ -100,16 +101,28 @@ public sealed class ScreenTimeManager
     {
         var req = PipeFraming.ParsePayload<SetScreenTimeConfigRequest>(msg);
         if (req?.Config is null) return new AckResponse(false, "Invalid payload.");
-        if (req.Config.EnableDailyLimit && req.Config.DailyLimitMinutes < ScreenTimeConfig.MinDailyLimitMinutes)
-            return new AckResponse(false,
-                $"Daily screen time limit must be at least {ScreenTimeConfig.MinDailyLimitMinutes} minutes.");
+
+        ScreenTimeConfigNormalizer.Normalize(req.Config);
+
+        foreach (var rule in req.Config.DailyLimits)
+        {
+            if (rule.LimitMinutes < ScreenTimeConfig.MinDailyLimitMinutes)
+                return new AckResponse(false,
+                    $"Daily screen time limit must be at least {ScreenTimeConfig.MinDailyLimitMinutes} minutes.");
+            if (rule.Schedule.ActiveDays == DayOfWeekFlags.None)
+                return new AckResponse(false, "Each daily limit must include at least one day.");
+        }
+
+        if (ScreenTimeScheduleOverlap.HasInternalDailyLimitOverlap(req.Config.DailyLimits, out var dailyMsg))
+            return new AckResponse(false, dailyMsg);
+
+        if (ScreenTimeScheduleOverlap.HasInternalAppLimitOverlap(req.Config.AppLimits, out var appMsg))
+            return new AckResponse(false, appMsg);
 
         await _lock.WaitAsync();
         try
         {
             _config = req.Config;
-            if (!_config.EnableDailyLimit)
-                _config.DailySchedule = null;
             ScreenTimeConfigRepository.Save(_config);
             _log.LogInformation("Screen time config updated.");
             return new AckResponse(true);
@@ -127,6 +140,7 @@ public sealed class ScreenTimeManager
             _sessionActive = true;
             _state = new ScreenTimeState { Date = DateOnly.FromDateTime(DateTime.Now) };
             _lockoutNotifiedAt = null;
+            _lockoutRuleId = null;
             _lastSessionId = 0xFFFFFFFF;
             _stateDirty = true;
             _log.LogInformation("Screen time tracking started for focus session.");
@@ -147,7 +161,9 @@ public sealed class ScreenTimeManager
             }
             _state.IsLockedOutForDay = false;
             _state.TotalSecondsUsed = 0;
+            _state.DailyRuleUsage.Clear();
             _lockoutNotifiedAt = null;
+            _lockoutRuleId = null;
             _stateDirty = true;
             _lastStatusSnapshot = null;
             ScreenTimeStateRepository.Save(_state);
@@ -168,11 +184,11 @@ public sealed class ScreenTimeManager
             if (!string.Equals(limit.ExeName, exeName, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            _state.AppUsage.TryGetValue(limit.ExeName, out var usage);
+            _state.AppUsage.TryGetValue(limit.Id, out var usage);
             bool blocked = limit.LimitType == AppLimitType.DailyTotal
                 ? usage?.IsBlockedToday ?? false
                 : usage?.IsBlockedInCurrentInterval ?? false;
-            if (!blocked) return null;
+            if (!blocked) continue;
 
             string body = limit.LimitType == AppLimitType.DailyTotal
                 ? $"{limit.DisplayName} has reached its {limit.LimitMinutes}-minute limit for this session and cannot be opened until the limit resets."
@@ -188,15 +204,19 @@ public sealed class ScreenTimeManager
     {
         if (!_sessionActive) return;
         var session = _getSession();
+        var blockedExes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var limit in _config.AppLimits)
         {
-            _state.AppUsage.TryGetValue(limit.ExeName, out var usage);
+            _state.AppUsage.TryGetValue(limit.Id, out var usage);
             bool blocked = limit.LimitType == AppLimitType.DailyTotal
                 ? usage?.IsBlockedToday ?? false
                 : usage?.IsBlockedInCurrentInterval ?? false;
             if (blocked)
-                _appBlocker.ApplyScreenTimeBlock(limit.ExeName, session);
+                blockedExes.Add(limit.ExeName);
         }
+
+        foreach (var exe in blockedExes)
+            _appBlocker.ApplyScreenTimeBlock(exe, session);
     }
 
     public ScreenTimeStatusResponse HandleGetStatus()
@@ -226,7 +246,7 @@ public sealed class ScreenTimeManager
     {
         var statuses = _config.AppLimits.Select(limit =>
         {
-            _state.AppUsage.TryGetValue(limit.ExeName, out var u);
+            _state.AppUsage.TryGetValue(limit.Id, out var u);
             bool blocked = limit.LimitType == AppLimitType.DailyTotal
                 ? u?.IsBlockedToday ?? false
                 : u?.IsBlockedInCurrentInterval ?? false;
@@ -242,25 +262,38 @@ public sealed class ScreenTimeManager
                     : null);
         }).ToList();
 
-        var dailySchedule = _config.DailySchedule;
-        var schedule = GetEffectiveDailySchedule();
-        var phase = ScreenTimeScheduleHelper.GetPhase(schedule, now);
-        bool scheduleActive = phase == DailySchedulePhase.Active;
+        var dailyRules = _config.DailyLimits;
+        bool enabled = dailyRules.Count > 0;
+        var activeRule = FindActiveDailyLimit(now);
+        bool scheduleActive = activeRule is not null;
+        var schedules = dailyRules.Select(r => r.Schedule).ToList();
+        var usage = activeRule is not null ? GetOrCreateDailyUsage(activeRule.Id) : null;
+
+        int dailyMinutes = activeRule?.LimitMinutes ?? 0;
+        int totalSeconds = usage?.TotalSecondsUsed ?? 0;
+        bool lockedOut = usage?.IsLockedOut == true && scheduleActive;
 
         return new ScreenTimeStatusResponse(
-            _config.EnableDailyLimit,
-            _config.DailyLimitMinutes,
-            _state.TotalSecondsUsed,
-            _state.IsLockedOutForDay && scheduleActive,
+            enabled,
+            dailyMinutes,
+            totalSeconds,
+            lockedOut,
             statuses,
-            DailyHasCustomSchedule: _config.EnableDailyLimit && dailySchedule is not null,
+            DailyHasCustomSchedule: enabled && (dailyRules.Count > 1 || dailyRules.Any(HasNonDefaultDailySchedule)),
             DailyScheduleActiveNow: scheduleActive,
-            DailyScheduleWindowEndedForToday: phase == DailySchedulePhase.AfterWindowToday,
-            DailyScheduleLabel: _config.EnableDailyLimit ? ScreenTimeScheduleHelper.Describe(schedule) : null,
-            DailyScheduleResumesAtLocal: _config.EnableDailyLimit && !scheduleActive
-                ? ScreenTimeScheduleHelper.GetNextActiveStart(schedule, now)
+            DailyScheduleWindowEndedForToday: enabled && !scheduleActive
+                && ScreenTimeScheduleHelper.IsWindowEndedForToday(schedules, now),
+            DailyScheduleLabel: activeRule is not null
+                ? ScreenTimeScheduleHelper.Describe(activeRule.Schedule)
+                : enabled ? $"{dailyRules.Count} scheduled limit{(dailyRules.Count == 1 ? "" : "s")}" : null,
+            DailyScheduleResumesAtLocal: enabled && !scheduleActive
+                ? ScreenTimeScheduleHelper.GetNextActiveStart(schedules, now)
                 : null);
     }
+
+    private static bool HasNonDefaultDailySchedule(DailyTimeLimit rule)
+        => ScreenTimeScheduleHelper.HasTimedWindow(rule.Schedule)
+           || rule.Schedule.ActiveDays != (DayOfWeekFlags)127;
 
     /// <summary>
     /// End of the current interval window (local time), aligned with <see cref="TickIntervalApp"/>.
@@ -318,7 +351,7 @@ public sealed class ScreenTimeManager
         }
         _lastSessionId = snap.UserActive ? snap.SessionId : 0xFFFFFFFF;
 
-        if (_config.EnableDailyLimit)
+        if (_config.DailyLimits.Count > 0)
             TickDailyLimit(now, snap.UserActive, snap.SessionId);
 
         if (_config.AppLimits.Count > 0)
@@ -336,29 +369,33 @@ public sealed class ScreenTimeManager
 
     private void TickDailyLimit(DateTime now, bool userActive, uint sessionId)
     {
-        var schedule = GetEffectiveDailySchedule();
-        bool scheduleActive = ScreenTimeScheduleHelper.IsEnforcementActive(schedule, now);
+        var activeRule = FindActiveDailyLimit(now);
+        bool scheduleActive = activeRule is not null;
 
         if (!scheduleActive)
         {
             _lockoutNotifiedAt = null;
-            if (_state.IsLockedOutForDay)
+            _lockoutRuleId = null;
+            foreach (var usage in _state.DailyRuleUsage.Values)
             {
-                _state.IsLockedOutForDay = false;
+                if (!usage.IsLockedOut) continue;
+                usage.IsLockedOut = false;
                 _stateDirty = true;
             }
         }
 
-        // Accumulate active time while user is logged in and schedule is active.
-        if (scheduleActive && userActive)
+        if (scheduleActive && userActive && activeRule is not null)
         {
-            _state.TotalSecondsUsed++;
-            if (!_state.IsLockedOutForDay)
+            var usage = GetOrCreateDailyUsage(activeRule.Id);
+            usage.TotalSecondsUsed++;
+            _state.TotalSecondsUsed = usage.TotalSecondsUsed;
+
+            if (!usage.IsLockedOut)
             {
-                int limitSec = _config.DailyLimitMinutes * 60;
-                int remaining = limitSec - _state.TotalSecondsUsed;
-                bool dailyWarn5 = _state.DailyWarned5Min;
-                bool dailyWarn1 = _state.DailyWarned1Min;
+                int limitSec = activeRule.LimitMinutes * 60;
+                int remaining = limitSec - usage.TotalSecondsUsed;
+                bool dailyWarn5 = usage.Warned5Min;
+                bool dailyWarn1 = usage.Warned1Min;
                 MaybeNotifyRemaining(
                     "Focus Lock — Daily Screen Time",
                     "your device screen time",
@@ -366,26 +403,31 @@ public sealed class ScreenTimeManager
                     limitSec,
                     ref dailyWarn5,
                     ref dailyWarn1);
-                _state.DailyWarned5Min = dailyWarn5;
-                _state.DailyWarned1Min = dailyWarn1;
+                usage.Warned5Min = dailyWarn5;
+                usage.Warned1Min = dailyWarn1;
 
-                if (_state.TotalSecondsUsed >= limitSec)
+                if (usage.TotalSecondsUsed >= limitSec)
                 {
+                    usage.IsLockedOut = true;
+                    _lockoutRuleId = activeRule.Id;
                     _state.IsLockedOutForDay = true;
                     _stateDirty = true;
-                    _log.LogInformation("Daily screen time limit reached ({Min} min).", _config.DailyLimitMinutes);
+                    _log.LogInformation("Daily screen time limit reached ({Min} min).", activeRule.LimitMinutes);
                 }
             }
         }
 
-        // Enforce lockout only while schedule is active.
-        if (_state.IsLockedOutForDay && scheduleActive && userActive)
+        if (_lockoutRuleId is not null
+            && scheduleActive
+            && userActive
+            && _state.DailyRuleUsage.TryGetValue(_lockoutRuleId, out var lockoutUsage)
+            && lockoutUsage.IsLockedOut
+            && activeRule?.Id == _lockoutRuleId)
         {
             if (_lockoutNotifiedAt == null)
             {
-                // First tick of this login → notify, then wait 5 s before disconnecting.
                 _lockoutNotifiedAt = now;
-                var timeStr = FormatMinutes(_config.DailyLimitMinutes);
+                var timeStr = FormatMinutes(activeRule!.LimitMinutes);
                 _log.LogInformation("Showing daily limit notification and scheduling disconnect.");
                 try
                 {
@@ -399,9 +441,9 @@ public sealed class ScreenTimeManager
             {
                 WTSDisconnectSession(IntPtr.Zero, sessionId, false);
                 _log.LogInformation("Disconnected session {Id} (daily screen time limit).", sessionId);
-                // Session is gone; reset so next login gets notified again.
                 _lastSessionId = 0xFFFFFFFF;
                 _lockoutNotifiedAt = null;
+                _lockoutRuleId = null;
             }
         }
     }
@@ -415,10 +457,10 @@ public sealed class ScreenTimeManager
             var effectiveSchedule = GetAppSchedule(limit);
             bool scheduleActive = effectiveSchedule.IsActiveNow(now);
 
-            if (!_state.AppUsage.TryGetValue(limit.ExeName, out var usage))
+            if (!_state.AppUsage.TryGetValue(limit.Id, out var usage))
             {
                 usage = new AppUsageEntry { ExeName = limit.ExeName };
-                _state.AppUsage[limit.ExeName] = usage;
+                _state.AppUsage[limit.Id] = usage;
             }
 
             bool appRunning = IsAppInUse(limit.ExeName, running, foregroundExe);
@@ -445,7 +487,7 @@ public sealed class ScreenTimeManager
             {
                 usage.IsBlockedToday = false;
                 _stateDirty = true;
-                _appBlocker.RemoveScreenTimeBlock(limit.ExeName, _getSession());
+                TryRemoveScreenTimeBlock(limit.ExeName);
             }
             return;
         }
@@ -506,7 +548,7 @@ public sealed class ScreenTimeManager
         if (usage.CurrentIntervalIndex != intervalIndex)
         {
             if (usage.IsBlockedInCurrentInterval)
-                _appBlocker.RemoveScreenTimeBlock(limit.ExeName, _getSession());
+                TryRemoveScreenTimeBlock(limit.ExeName);
             usage.CurrentIntervalIndex = intervalIndex;
             usage.CurrentIntervalSecondsUsed = 0;
             usage.IsBlockedInCurrentInterval = false;
@@ -561,8 +603,45 @@ public sealed class ScreenTimeManager
     private static ScreenTimeSchedule GetAppSchedule(AppTimeLimit limit)
         => limit.Schedule ?? ScreenTimeSchedule.Always;
 
-    private ScreenTimeSchedule GetEffectiveDailySchedule()
-        => _config.DailySchedule ?? ScreenTimeSchedule.Always;
+    private DailyTimeLimit? FindActiveDailyLimit(DateTime now)
+    {
+        foreach (var rule in _config.DailyLimits)
+        {
+            if (ScreenTimeScheduleHelper.IsEnforcementActive(rule.Schedule, now))
+                return rule;
+        }
+        return null;
+    }
+
+    private DailyRuleUsageEntry GetOrCreateDailyUsage(string ruleId)
+    {
+        if (!_state.DailyRuleUsage.TryGetValue(ruleId, out var usage))
+        {
+            usage = new DailyRuleUsageEntry();
+            _state.DailyRuleUsage[ruleId] = usage;
+        }
+        return usage;
+    }
+
+    private bool IsExeBlockedByAnyRule(string exeName)
+    {
+        foreach (var limit in _config.AppLimits)
+        {
+            if (!string.Equals(limit.ExeName, exeName, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (!_state.AppUsage.TryGetValue(limit.Id, out var usage))
+                continue;
+            if (usage.IsBlockedToday || usage.IsBlockedInCurrentInterval)
+                return true;
+        }
+        return false;
+    }
+
+    private void TryRemoveScreenTimeBlock(string exeName)
+    {
+        if (!IsExeBlockedByAnyRule(exeName))
+            _appBlocker.RemoveScreenTimeBlock(exeName, _getSession());
+    }
 
     private void MaybeNotifyRemaining(
         string title,

@@ -55,6 +55,23 @@ public static class ScreenTimeScheduleHelper
     }
 
     /// <summary>Next local time the schedule becomes active (null if always active now).</summary>
+    public static DateTime? GetNextActiveStart(IEnumerable<ScreenTimeSchedule> schedules, DateTime localNow)
+    {
+        DateTime? best = null;
+        foreach (var schedule in schedules)
+        {
+            var next = GetNextActiveStart(schedule, localNow);
+            if (next is null) continue;
+            if (best is null || next < best)
+                best = next;
+        }
+        return best;
+    }
+
+    public static bool IsWindowEndedForToday(IEnumerable<ScreenTimeSchedule> schedules, DateTime localNow)
+        => schedules.Any(s => GetPhase(s, localNow) == DailySchedulePhase.AfterWindowToday);
+
+    /// <summary>Next local time the schedule becomes active (null if active now).</summary>
     public static DateTime? GetNextActiveStart(ScreenTimeSchedule schedule, DateTime localNow)
     {
         if (schedule.IsActiveNow(localNow))

@@ -8,8 +8,10 @@ public class ScreenTimeConfig
     public bool EnableDailyLimit { get; set; }
     public int DailyLimitMinutes { get; set; } = 120;
 
-    // null = no schedule restriction (all day, every day).
+    // Legacy single-rule fields — migrated into DailyLimits on load.
     public ScreenTimeSchedule? DailySchedule { get; set; }
+
+    public List<DailyTimeLimit> DailyLimits { get; set; } = new();
 
     public List<AppTimeLimit> AppLimits { get; set; } = new();
 }

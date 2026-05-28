@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FocusLock.Core.Ipc;
 using FocusLock.Core.Models;
+using FocusLock.Core.ScreenTime;
 using FocusLock.UI.Services;
 using FocusLock.UI.Views;
 
@@ -17,53 +18,67 @@ public partial class ScreenTimeViewModel : ObservableObject
     private readonly NavigationService _nav;
     private readonly DispatcherTimer _statusTimer;
 
-    // ── Daily limit ───────────────────────────────────────────────────────────
+    // ── Daily limits list ─────────────────────────────────────────────────────
 
-    [ObservableProperty] private bool _enableDailyLimit;
-    [ObservableProperty] private string _dailyLimitHours   = "2";
-    [ObservableProperty] private string _dailyLimitMin     = "0";
+    public ObservableCollection<DailyTimeLimitViewModel> DailyLimits { get; } = new();
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowSchedulePicker))]
-    private bool _dailyUseCustomSchedule;
+    [NotifyPropertyChangedFor(nameof(IsNotAddingDaily))]
+    private bool _isAddingDailyLimit;
 
-    public bool ShowSchedulePicker => DailyUseCustomSchedule;
-
-    // ── Global schedule days ──────────────────────────────────────────────────
-
-    private DayOfWeekFlags _globalDays = (DayOfWeekFlags)127;
-
-    public bool GlobalMon { get => GetDay(_globalDays, DayOfWeekFlags.Monday);    set => SetDay(ref _globalDays, DayOfWeekFlags.Monday,    value, nameof(GlobalMon)); }
-    public bool GlobalTue { get => GetDay(_globalDays, DayOfWeekFlags.Tuesday);   set => SetDay(ref _globalDays, DayOfWeekFlags.Tuesday,   value, nameof(GlobalTue)); }
-    public bool GlobalWed { get => GetDay(_globalDays, DayOfWeekFlags.Wednesday); set => SetDay(ref _globalDays, DayOfWeekFlags.Wednesday, value, nameof(GlobalWed)); }
-    public bool GlobalThu { get => GetDay(_globalDays, DayOfWeekFlags.Thursday);  set => SetDay(ref _globalDays, DayOfWeekFlags.Thursday,  value, nameof(GlobalThu)); }
-    public bool GlobalFri { get => GetDay(_globalDays, DayOfWeekFlags.Friday);    set => SetDay(ref _globalDays, DayOfWeekFlags.Friday,    value, nameof(GlobalFri)); }
-    public bool GlobalSat { get => GetDay(_globalDays, DayOfWeekFlags.Saturday);  set => SetDay(ref _globalDays, DayOfWeekFlags.Saturday,  value, nameof(GlobalSat)); }
-    public bool GlobalSun { get => GetDay(_globalDays, DayOfWeekFlags.Sunday);    set => SetDay(ref _globalDays, DayOfWeekFlags.Sunday,    value, nameof(GlobalSun)); }
-
-    // ── Global schedule time range ────────────────────────────────────────────
-
-    [ObservableProperty] private string _globalStartHour   = "9";
-    [ObservableProperty] private string _globalStartMinute = "00";
+    public bool IsNotAddingDaily => !IsAddingDailyLimit;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(GlobalStartIsAm))]
-    [NotifyPropertyChangedFor(nameof(GlobalStartIsPm))]
-    private string _globalStartAmPm = "AM";
-
-    public bool GlobalStartIsAm { get => GlobalStartAmPm == "AM"; set { if (value) GlobalStartAmPm = "AM"; } }
-    public bool GlobalStartIsPm { get => GlobalStartAmPm == "PM"; set { if (value) GlobalStartAmPm = "PM"; } }
-
-    [ObservableProperty] private string _globalEndHour   = "5";
-    [ObservableProperty] private string _globalEndMinute = "00";
+    [NotifyPropertyChangedFor(nameof(HasDailyLimitAddError))]
+    private string _dailyLimitAddError = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(GlobalEndIsAm))]
-    [NotifyPropertyChangedFor(nameof(GlobalEndIsPm))]
-    private string _globalEndAmPm = "PM";
+    [NotifyPropertyChangedFor(nameof(HasAppLimitAddError))]
+    private string _appLimitAddError = string.Empty;
 
-    public bool GlobalEndIsAm { get => GlobalEndAmPm == "AM"; set { if (value) GlobalEndAmPm = "AM"; } }
-    public bool GlobalEndIsPm { get => GlobalEndAmPm == "PM"; set { if (value) GlobalEndAmPm = "PM"; } }
+    public bool HasDailyLimitAddError => !string.IsNullOrEmpty(DailyLimitAddError);
+    public bool HasAppLimitAddError   => !string.IsNullOrEmpty(AppLimitAddError);
+
+    [ObservableProperty] private string _draftDailyLimitHours = "2";
+    [ObservableProperty] private string _draftDailyLimitMin   = "0";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDailyDraftSchedulePicker))]
+    private bool _draftDailyUseCustomSchedule;
+
+    public bool ShowDailyDraftSchedulePicker => DraftDailyUseCustomSchedule;
+
+    private DayOfWeekFlags _dailyDraftDays = (DayOfWeekFlags)127;
+
+    public bool DailyDraftMon { get => GetDay(_dailyDraftDays, DayOfWeekFlags.Monday);    set => SetDay(ref _dailyDraftDays, DayOfWeekFlags.Monday,    value, nameof(DailyDraftMon)); }
+    public bool DailyDraftTue { get => GetDay(_dailyDraftDays, DayOfWeekFlags.Tuesday);   set => SetDay(ref _dailyDraftDays, DayOfWeekFlags.Tuesday,   value, nameof(DailyDraftTue)); }
+    public bool DailyDraftWed { get => GetDay(_dailyDraftDays, DayOfWeekFlags.Wednesday); set => SetDay(ref _dailyDraftDays, DayOfWeekFlags.Wednesday, value, nameof(DailyDraftWed)); }
+    public bool DailyDraftThu { get => GetDay(_dailyDraftDays, DayOfWeekFlags.Thursday);  set => SetDay(ref _dailyDraftDays, DayOfWeekFlags.Thursday,  value, nameof(DailyDraftThu)); }
+    public bool DailyDraftFri { get => GetDay(_dailyDraftDays, DayOfWeekFlags.Friday);    set => SetDay(ref _dailyDraftDays, DayOfWeekFlags.Friday,    value, nameof(DailyDraftFri)); }
+    public bool DailyDraftSat { get => GetDay(_dailyDraftDays, DayOfWeekFlags.Saturday);  set => SetDay(ref _dailyDraftDays, DayOfWeekFlags.Saturday,  value, nameof(DailyDraftSat)); }
+    public bool DailyDraftSun { get => GetDay(_dailyDraftDays, DayOfWeekFlags.Sunday);    set => SetDay(ref _dailyDraftDays, DayOfWeekFlags.Sunday,    value, nameof(DailyDraftSun)); }
+
+    [ObservableProperty] private string _dailyDraftStartHour   = "9";
+    [ObservableProperty] private string _dailyDraftStartMinute = "00";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DailyDraftStartIsAm))]
+    [NotifyPropertyChangedFor(nameof(DailyDraftStartIsPm))]
+    private string _dailyDraftStartAmPm = "AM";
+
+    public bool DailyDraftStartIsAm { get => DailyDraftStartAmPm == "AM"; set { if (value) DailyDraftStartAmPm = "AM"; } }
+    public bool DailyDraftStartIsPm { get => DailyDraftStartAmPm == "PM"; set { if (value) DailyDraftStartAmPm = "PM"; } }
+
+    [ObservableProperty] private string _dailyDraftEndHour   = "5";
+    [ObservableProperty] private string _dailyDraftEndMinute = "00";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DailyDraftEndIsAm))]
+    [NotifyPropertyChangedFor(nameof(DailyDraftEndIsPm))]
+    private string _dailyDraftEndAmPm = "PM";
+
+    public bool DailyDraftEndIsAm { get => DailyDraftEndAmPm == "AM"; set { if (value) DailyDraftEndAmPm = "AM"; } }
+    public bool DailyDraftEndIsPm { get => DailyDraftEndAmPm == "PM"; set { if (value) DailyDraftEndAmPm = "PM"; } }
 
     // ── App limits list ───────────────────────────────────────────────────────
 
@@ -215,31 +230,18 @@ public partial class ScreenTimeViewModel : ObservableObject
 
     private void LoadFromConfig(ScreenTimeConfig config)
     {
-        EnableDailyLimit = config.EnableDailyLimit;
-        var dailyMinutes = config.DailyLimitMinutes;
-        if (config.EnableDailyLimit && dailyMinutes < ScreenTimeConfig.MinDailyLimitMinutes)
-            dailyMinutes = ScreenTimeConfig.MinDailyLimitMinutes;
-        (DailyLimitHours, DailyLimitMin) = SplitMinutes(dailyMinutes);
+        ScreenTimeConfigNormalizer.Normalize(config);
 
-        DailyUseCustomSchedule = config.DailySchedule is not null;
-        if (config.DailySchedule is null)
-        {
-            _globalDays = (DayOfWeekFlags)127;
-        }
-        else
-        {
-            _globalDays = config.DailySchedule.ActiveDays;
-            (GlobalStartHour, GlobalStartMinute, GlobalStartAmPm) =
-                ToTimeFields(config.DailySchedule.StartTime);
-            (GlobalEndHour, GlobalEndMinute, GlobalEndAmPm) =
-                ToTimeFields(config.DailySchedule.EndTime);
-            RefreshDayProps("Global");
-        }
+        DailyLimits.Clear();
+        foreach (var rule in config.DailyLimits)
+            DailyLimits.Add(new DailyTimeLimitViewModel(rule, RemoveDailyLimit));
 
         AppLimits.Clear();
         foreach (var limit in config.AppLimits)
             AppLimits.Add(new AppTimeLimitViewModel(limit, RemoveAppLimit));
     }
+
+    private void RemoveDailyLimit(DailyTimeLimitViewModel vm) => DailyLimits.Remove(vm);
 
     private async Task RefreshStatusAsync()
     {
@@ -283,9 +285,9 @@ public partial class ScreenTimeViewModel : ObservableObject
     private async Task SaveAsync()
     {
         SaveMessage = string.Empty;
-        if (EnableDailyLimit && ParseHMRaw(DailyLimitHours, DailyLimitMin) < ScreenTimeConfig.MinDailyLimitMinutes)
+        if (DailyLimits.Any(d => d.LimitMinutes < ScreenTimeConfig.MinDailyLimitMinutes))
         {
-            SaveMessage = $"Daily screen time limit must be at least {ScreenTimeConfig.MinDailyLimitMinutes} minutes.";
+            SaveMessage = $"Each daily screen time limit must be at least {ScreenTimeConfig.MinDailyLimitMinutes} minutes.";
             return;
         }
         var config = BuildConfig();
@@ -301,8 +303,60 @@ public partial class ScreenTimeViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void ShowAddDailyLimit()
+    {
+        DailyLimitAddError         = string.Empty;
+        IsAddingDailyLimit         = true;
+        DraftDailyLimitHours       = "2";
+        DraftDailyLimitMin         = "0";
+        DraftDailyUseCustomSchedule = true;
+        _dailyDraftDays            = (DayOfWeekFlags)127;
+        RefreshDayProps("DailyDraft");
+        DailyDraftStartHour = "9"; DailyDraftStartMinute = "00"; DailyDraftStartAmPm = "AM";
+        DailyDraftEndHour   = "5"; DailyDraftEndMinute   = "00"; DailyDraftEndAmPm   = "PM";
+    }
+
+    [RelayCommand]
+    private void CancelAddDaily() => IsAddingDailyLimit = false;
+
+    [RelayCommand]
+    private void AddDailyLimit()
+    {
+        DailyLimitAddError = string.Empty;
+
+        int limitMinutes = ParseDailyLimitMinutes(DraftDailyLimitHours, DraftDailyLimitMin);
+        if (limitMinutes < ScreenTimeConfig.MinDailyLimitMinutes)
+        {
+            DailyLimitAddError = $"Daily limit must be at least {ScreenTimeConfig.MinDailyLimitMinutes} minutes.";
+            return;
+        }
+
+        var schedule = BuildDailyDraftSchedule();
+        if (schedule.ActiveDays == DayOfWeekFlags.None)
+        {
+            DailyLimitAddError = "Select at least one day for this daily limit.";
+            return;
+        }
+
+        var existing = DailyLimits.Select(d => d.ToModel()).ToList();
+        if (ScreenTimeScheduleOverlap.TryFindDailyLimitOverlap(existing, schedule, out var overlapMsg))
+        {
+            DailyLimitAddError = overlapMsg!;
+            return;
+        }
+
+        DailyLimits.Add(new DailyTimeLimitViewModel(new DailyTimeLimit
+        {
+            LimitMinutes = limitMinutes,
+            Schedule     = schedule
+        }, RemoveDailyLimit));
+        IsAddingDailyLimit = false;
+    }
+
+    [RelayCommand]
     private void ShowAddAppLimit()
     {
+        AppLimitAddError    = string.Empty;
         IsAddingAppLimit    = true;
         DraftExeName        = string.Empty;
         DraftDisplayName    = string.Empty;
@@ -349,9 +403,25 @@ public partial class ScreenTimeViewModel : ObservableObject
     [RelayCommand]
     private void AddAppLimit()
     {
+        AppLimitAddError = string.Empty;
         if (string.IsNullOrWhiteSpace(DraftExeName)) return;
 
         var schedule = DraftUseCustomSchedule ? BuildDraftSchedule() : null;
+        var candidateSchedule = schedule ?? ScreenTimeSchedule.Always;
+        if (schedule is not null && candidateSchedule.ActiveDays == DayOfWeekFlags.None)
+        {
+            AppLimitAddError = "Select at least one day for this app limit schedule.";
+            return;
+        }
+
+        var existing = AppLimits.Select(a => a.ToModel()).ToList();
+        if (ScreenTimeScheduleOverlap.TryFindAppLimitOverlap(
+                existing, DraftExeName, candidateSchedule, out var overlapMsg))
+        {
+            AppLimitAddError = overlapMsg!;
+            return;
+        }
+
         var limit = new AppTimeLimit
         {
             ExeName         = DraftExeName,
@@ -364,10 +434,6 @@ public partial class ScreenTimeViewModel : ObservableObject
             Schedule        = schedule
         };
 
-        var existing = AppLimits.FirstOrDefault(a =>
-            string.Equals(a.ExeName, DraftExeName, StringComparison.OrdinalIgnoreCase));
-        if (existing is not null) AppLimits.Remove(existing);
-
         AppLimits.Add(new AppTimeLimitViewModel(limit, RemoveAppLimit));
         IsAddingAppLimit = false;
     }
@@ -378,18 +444,22 @@ public partial class ScreenTimeViewModel : ObservableObject
 
     private ScreenTimeConfig BuildConfig() => new()
     {
-        EnableDailyLimit  = EnableDailyLimit,
-        DailyLimitMinutes = ParseDailyLimitMinutes(DailyLimitHours, DailyLimitMin),
-        DailySchedule     = DailyUseCustomSchedule ? BuildGlobalSchedule() : null,
-        AppLimits         = AppLimits.Select(a => a.ToModel()).ToList()
+        DailyLimits = DailyLimits.Select(d => d.ToModel()).ToList(),
+        AppLimits   = AppLimits.Select(a => a.ToModel()).ToList()
     };
 
-    private ScreenTimeSchedule BuildGlobalSchedule() => new()
+    private ScreenTimeSchedule BuildDailyDraftSchedule()
     {
-        ActiveDays = _globalDays,
-        StartTime  = ParseTimeTo(GlobalStartHour, GlobalStartMinute, GlobalStartAmPm),
-        EndTime    = ParseTimeTo(GlobalEndHour,   GlobalEndMinute,   GlobalEndAmPm)
-    };
+        if (!DraftDailyUseCustomSchedule)
+            return new ScreenTimeSchedule { ActiveDays = _dailyDraftDays };
+
+        return new ScreenTimeSchedule
+        {
+            ActiveDays = _dailyDraftDays,
+            StartTime  = ParseTimeTo(DailyDraftStartHour, DailyDraftStartMinute, DailyDraftStartAmPm),
+            EndTime    = ParseTimeTo(DailyDraftEndHour,   DailyDraftEndMinute,   DailyDraftEndAmPm)
+        };
+    }
 
     private ScreenTimeSchedule BuildDraftSchedule() => new()
     {
