@@ -6,13 +6,17 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
 
 - **App blocking**
   - Uses **IFEO (Image File Execution Options)** to redirect launches of blocked executables to a tiny stub (`FocusLock.BlockerStub.exe`).
+  - When a blocked app is launched, a native Windows dialog appears: "Focus Lock has blocked access to [App]."
   - The service also runs a **process monitor loop** that kills blocked processes every ~2 seconds (helps catch renamed exes and already-running apps).
+  - Apps are selected from a searchable dropdown of all installed applications (populated from the Windows App Paths registry); a Browse button handles apps not in the list.
 - **Website blocking**
-  - The service appends a sentinel block to the Windows **hosts file** (`C:\Windows\System32\drivers\etc\hosts`) and flushes DNS.
+  - The service appends a sentinel block to the Windows **hosts file** (`C:\Windows\System32\drivers\etc\hosts`), redirecting blocked domains to `127.0.0.1`, and flushes DNS.
+  - A lightweight HTTP server runs on port 80 for the duration of the session. When a blocked site is visited over HTTP, the browser shows a styled block page and a native Windows dialog popup appears ("Focus Lock has blocked access to this site"). Popup is debounced per domain (30-second cooldown). HTTPS connections are refused (still effectively blocked) but cannot show the styled page without a browser certificate.
 - **Session enforcement**
   - Sessions are persisted to `C:\ProgramData\FocusLock\session.json` so the service can **recover after restart/crash** and keep enforcing until the deadline.
 - **Strict mode**
-  - Locks the session so it **cannot be ended early**. Three layers of enforcement are applied at session start and removed automatically on deadline:
+  - Locks the session so it **cannot be ended early**. Before starting, the UI shows a warning panel and requires the user to check an explicit consent checkbox.
+  - Three layers of enforcement are applied at session start and removed automatically on deadline:
     1. **Service DACL** — the service modifies its own Windows security descriptor to deny `SERVICE_STOP` and `SERVICE_PAUSE_CONTINUE` to `BUILTIN\Administrators`. `NT AUTHORITY\SYSTEM` (LocalSystem) is a distinct SID and is unaffected, so the service still stops cleanly on system shutdown and restarts normally.
     2. **IFEO registry ACLs** — each Image File Execution Options key written for the session gets a deny-write ACL for `Administrators`, preventing manual deletion or modification. The service (running as LocalSystem) can still repair keys via the monitor loop.
     3. **Hosts file ACL** — the hosts file gets a deny-write ACL for `Administrators`, preventing the sentinel block from being manually removed. The service retains full control so it can restore the file on session end.

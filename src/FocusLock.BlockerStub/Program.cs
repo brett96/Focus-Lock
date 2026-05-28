@@ -2,6 +2,21 @@ using System.IO.Pipes;
 using System.Windows.Forms;
 using FocusLock.Core.Ipc;
 
+// Website-blocked notification mode: launched by the service with --notify <domain> <deadline>.
+if (args.Length >= 1 && args[0] == "--notify")
+{
+    string domain   = args.Length >= 2 ? args[1] : "this site";
+    string deadline = args.Length >= 3 ? args[2] : "the scheduled time";
+    MessageBox.Show(
+        $"Focus Lock has blocked access to this site.\n\n{domain} is blocked until {deadline}.",
+        "Focus Lock — Access Blocked",
+        MessageBoxButtons.OK,
+        MessageBoxIcon.Warning,
+        MessageBoxDefaultButton.Button1,
+        MessageBoxOptions.DefaultDesktopOnly);
+    return;
+}
+
 // args[0] is the path to the originally-requested executable (passed by Windows via IFEO).
 string exeName = args.Length > 0 ? Path.GetFileName(args[0]) : string.Empty;
 
@@ -29,10 +44,10 @@ try
         string appLabel = response.AppDisplayName ?? exeName;
 
         MessageBox.Show(
-            $"{appLabel} is blocked until {timeStr}.\n\nYour Focus Lock session is active.",
-            "Focus Lock",
+            $"Focus Lock has blocked access to {appLabel}.\n\nThis application is blocked until {timeStr}.",
+            "Focus Lock — Access Blocked",
             MessageBoxButtons.OK,
-            MessageBoxIcon.Information,
+            MessageBoxIcon.Warning,
             MessageBoxDefaultButton.Button1,
             MessageBoxOptions.DefaultDesktopOnly);
     }

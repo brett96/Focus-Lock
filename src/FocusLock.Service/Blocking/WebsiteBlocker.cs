@@ -34,8 +34,8 @@ public class WebsiteBlocker(ILogger log)
             lines.AppendLine($"# BEGIN FocusLock session {session.Id}");
             foreach (var site in session.BlockedSites)
             {
-                lines.AppendLine($"0.0.0.0 {site.Domain}");
-                lines.AppendLine($"0.0.0.0 www.{site.Domain}");
+                lines.AppendLine($"127.0.0.1 {site.Domain}");
+                lines.AppendLine($"127.0.0.1 www.{site.Domain}");
             }
             lines.AppendLine($"# END FocusLock session {session.Id}");
 

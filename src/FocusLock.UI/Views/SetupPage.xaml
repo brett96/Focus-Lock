@@ -32,7 +32,7 @@
             </Style.Triggers>
         </Style>
 
-        <!-- AM/PM toggle button — looks like the website entry pills -->
+        <!-- AM/PM toggle button -->
         <Style x:Key="AmPmButton" TargetType="RadioButton">
             <Setter Property="Foreground" Value="#CDD6F4"/>
             <Setter Property="FontSize" Value="14"/>
@@ -49,6 +49,83 @@
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="#383A4A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Dropdown toggle button for app picker -->
+        <Style x:Key="DropdownToggleButton" TargetType="ToggleButton">
+            <Setter Property="Background" Value="#313244"/>
+            <Setter Property="Foreground" Value="#CDD6F4"/>
+            <Setter Property="BorderBrush" Value="#585B70"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6" Padding="12,9">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter Grid.Column="0" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="▾" Foreground="#6C7086"
+                                           VerticalAlignment="Center" Margin="16,0,0,0"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#89B4FA"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#89B4FA"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#45475A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Checkbox style for the app list (dark-theme) -->
+        <Style x:Key="AppCheckBox" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#CDD6F4"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="Bd" Background="Transparent" Padding="10,7" CornerRadius="4">
+                            <StackPanel Orientation="Horizontal">
+                                <Border x:Name="Box" Width="16" Height="16" CornerRadius="3"
+                                        Background="Transparent" BorderBrush="#585B70" BorderThickness="1.5"
+                                        Margin="0,0,10,0" VerticalAlignment="Center">
+                                    <TextBlock x:Name="Tick" Text="✓" Foreground="#89B4FA" FontSize="11"
+                                               FontWeight="Bold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Visibility="Collapsed"/>
+                                </Border>
+                                <ContentPresenter VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box"  Property="Background"   Value="#1E3A5F"/>
+                                <Setter TargetName="Box"  Property="BorderBrush"  Value="#89B4FA"/>
+                                <Setter TargetName="Tick" Property="Visibility"   Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#3D3F55"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -121,7 +198,72 @@
             <!-- Blocked apps -->
             <TextBlock Text="BLOCKED APPLICATIONS" FontSize="11" FontWeight="Bold"
                        Foreground="#6C7086" Margin="0,0,0,8"/>
-            <ItemsControl ItemsSource="{Binding BlockedApps}" Margin="0,0,0,8">
+
+            <!-- Dropdown toggle + popup -->
+            <Grid HorizontalAlignment="Left" Margin="0,0,0,8">
+                <ToggleButton x:Name="AppDropdownBtn"
+                              Content="{Binding AppDropdownLabel}"
+                              Style="{StaticResource DropdownToggleButton}"
+                              MinWidth="280"/>
+
+                <Popup x:Name="AppPopup"
+                       PlacementTarget="{Binding ElementName=AppDropdownBtn}"
+                       Placement="Bottom"
+                       IsOpen="{Binding IsChecked, ElementName=AppDropdownBtn}"
+                       StaysOpen="False"
+                       AllowsTransparency="True"
+                       Closed="AppPopup_Closed">
+                    <Border Background="#313244" BorderBrush="#585B70" BorderThickness="1"
+                            CornerRadius="6" Width="320"
+                            Effect="{DynamicResource {x:Static SystemParameters.DropShadowKey}}">
+                        <StackPanel>
+                            <!-- Search -->
+                            <Border BorderBrush="#585B70" BorderThickness="0,0,0,1" Padding="8">
+                                <TextBox Text="{Binding AppSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                         Background="#1E1E2E" Foreground="#CDD6F4"
+                                         CaretBrush="#CDD6F4" SelectionBrush="#89B4FA"
+                                         BorderThickness="1" BorderBrush="#585B70"
+                                         FontSize="13" Padding="8,6"/>
+                            </Border>
+
+                            <!-- App list -->
+                            <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto"
+                                          Background="Transparent">
+                                <StackPanel>
+                                    <ItemsControl ItemsSource="{Binding FilteredApps}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                          Content="{Binding DisplayName}"
+                                                          Style="{StaticResource AppCheckBox}"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Text="Loading installed applications..."
+                                               Visibility="{Binding IsLoadingApps, Converter={StaticResource BoolToVisibility}}"
+                                               Foreground="#6C7086" Margin="16,12" FontSize="13"/>
+                                    <TextBlock Text="No applications found."
+                                               Visibility="{Binding HasNoFilteredApps, Converter={StaticResource BoolToVisibility}}"
+                                               Foreground="#6C7086" Margin="16,12" FontSize="13"/>
+                                </StackPanel>
+                            </ScrollViewer>
+
+                            <!-- Browse for unlisted app -->
+                            <Border BorderBrush="#585B70" BorderThickness="0,1,0,0" Padding="8">
+                                <Button Content="Browse for unlisted app..."
+                                        Command="{Binding BrowseForAppCommand}"
+                                        Background="Transparent" Foreground="#89B4FA"
+                                        BorderThickness="0" Cursor="Hand"
+                                        FontSize="13" HorizontalAlignment="Left"
+                                        Padding="2,4"/>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+            </Grid>
+
+            <!-- Selected apps list -->
+            <ItemsControl ItemsSource="{Binding BlockedApps}" Margin="0,0,0,24">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Border Background="#313244" CornerRadius="6" Padding="10,6" Margin="0,0,0,4">
@@ -137,8 +279,6 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <Button Content="+ Add Application" Command="{Binding BrowseForAppCommand}"
-                    Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,0,0,24"/>
 
             <!-- Blocked sites -->
             <TextBlock Text="BLOCKED WEBSITES" FontSize="11" FontWeight="Bold"

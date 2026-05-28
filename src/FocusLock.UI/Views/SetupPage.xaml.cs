@@ -11,4 +11,8 @@ public partial class SetupPage : Page
         InitializeComponent();
         DataContext = App.Services.GetRequiredService<SetupViewModel>();
     }
+
+    // Syncs the toggle button back to unchecked when Popup closes via click-outside.
+    private void AppPopup_Closed(object sender, EventArgs e)
+        => AppDropdownBtn.IsChecked = false;
 }

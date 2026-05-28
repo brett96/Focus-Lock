@@ -15,6 +15,7 @@ public class SessionWorker : BackgroundService
     private readonly AppBlocker _appBlocker;
     private readonly WebsiteBlocker _websiteBlocker;
     private readonly StrictModeManager _strictMode;
+    private readonly BlockPageServer _blockPageServer;
     private readonly SemaphoreSlim _sessionLock = new(1, 1);
 
     public SessionWorker(ILogger<SessionWorker> log)
@@ -23,6 +24,7 @@ public class SessionWorker : BackgroundService
         _appBlocker = new AppBlocker(log);
         _websiteBlocker = new WebsiteBlocker(log);
         _strictMode = new StrictModeManager(log);
+        _blockPageServer = new BlockPageServer(log, new SessionNotifier(log));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -72,6 +74,7 @@ public class SessionWorker : BackgroundService
         _session = saved;
         _appBlocker.Apply(_session);
         _websiteBlocker.Apply(_session);
+        _blockPageServer.Start(_session);
 
         if (_session.Mode == SessionMode.Strict)
         {
@@ -214,6 +217,7 @@ public class SessionWorker : BackgroundService
 
             _appBlocker.Apply(session);
             _websiteBlocker.Apply(session);
+            _blockPageServer.Start(session);
 
             if (req.Mode == SessionMode.Strict)
             {
@@ -275,6 +279,7 @@ public class SessionWorker : BackgroundService
 
         _appBlocker.Remove(session);
         _websiteBlocker.Remove(session);
+        _blockPageServer.Stop();
 
         if (session.Mode == SessionMode.Strict)
             _strictMode.Deactivate(session);
