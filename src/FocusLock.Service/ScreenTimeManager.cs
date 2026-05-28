@@ -17,7 +17,7 @@ public sealed class ScreenTimeManager
     private readonly AppBlocker _appBlocker;
     private readonly Func<FocusSession?> _getSession;
 
-    private ScreenTimeConfig _config = ScreenTimeConfigRepository.Load();
+    private ScreenTimeConfig _config;
     private ScreenTimeState  _state  = new();
 
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -28,6 +28,9 @@ public sealed class ScreenTimeManager
         _log        = log;
         _appBlocker = appBlocker;
         _getSession = getSession;
+        _config     = ScreenTimeConfigRepository.Load();
+        if (!_config.EnableDailyLimit)
+            _config.DailySchedule = null;
     }
 
     // Tracks the "lockout notification was sent for this login" moment.
@@ -37,6 +40,7 @@ public sealed class ScreenTimeManager
     // Dirty flag: save state immediately after an important change.
     private bool _stateDirty;
     private int  _ticksSinceSave;
+    private ScreenTimeStatusResponse? _lastStatusSnapshot;
 
     // ── Public loop ───────────────────────────────────────────────────────────
 
@@ -46,17 +50,46 @@ public sealed class ScreenTimeManager
         {
             try
             {
-                await _lock.WaitAsync(ct);
-                try { Tick(); }
-                finally { _lock.Release(); }
+                if (_sessionActive)
+                {
+                    bool userActive = IsUserLoggedIn(out uint sessionId);
+                    HashSet<string>? running = null;
+                    string? foreground = null;
+                    if (_config.AppLimits.Count > 0)
+                    {
+                        running    = GetRunningExeNames();
+                        foreground = GetForegroundExeName();
+                    }
+
+                    var snap = new TickSnapshot(DateTime.Now, userActive, sessionId, running, foreground);
+                    if (!await _lock.WaitAsync(TimeSpan.FromSeconds(5), ct))
+                    {
+                        _log.LogWarning("Screen time tick skipped — could not acquire lock in time.");
+                    }
+                    else
+                    {
+                        try { ApplyTick(snap); }
+                        finally { _lock.Release(); }
+                    }
+                }
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex) { _log.LogError(ex, "ScreenTimeManager tick error."); }
 
             await Task.Delay(1000, ct);
         }
-        ScreenTimeStateRepository.Save(_state);
+
+        await _lock.WaitAsync(ct);
+        try { ScreenTimeStateRepository.Save(_state); }
+        finally { _lock.Release(); }
     }
+
+    private readonly record struct TickSnapshot(
+        DateTime Now,
+        bool UserActive,
+        uint SessionId,
+        HashSet<string>? RunningExeNames,
+        string? ForegroundExe);
 
     // ── IPC handlers ─────────────────────────────────────────────────────────
 
@@ -72,6 +105,8 @@ public sealed class ScreenTimeManager
         try
         {
             _config = req.Config;
+            if (!_config.EnableDailyLimit)
+                _config.DailySchedule = null;
             ScreenTimeConfigRepository.Save(_config);
             _log.LogInformation("Screen time config updated.");
             return new AckResponse(true);
@@ -111,6 +146,7 @@ public sealed class ScreenTimeManager
             _state.TotalSecondsUsed = 0;
             _lockoutNotifiedAt = null;
             _stateDirty = true;
+            _lastStatusSnapshot = null;
             ScreenTimeStateRepository.Save(_state);
             _appBlocker.ClearAllScreenTimeBlocks(_getSession());
             _log.LogInformation("Screen time tracking stopped (session ended).");
@@ -163,10 +199,28 @@ public sealed class ScreenTimeManager
     public ScreenTimeStatusResponse HandleGetStatus()
     {
         if (!_sessionActive)
+            return new ScreenTimeStatusResponse(false, 0, 0, false, []);
+
+        // Never block the pipe server for long — the tick used to hold this lock during
+        // full process enumeration and starved all IPC (UI showed "service unreachable").
+        if (!_lock.Wait(TimeSpan.FromMilliseconds(500)))
         {
+            if (_lastStatusSnapshot is not null)
+                return _lastStatusSnapshot;
             return new ScreenTimeStatusResponse(false, 0, 0, false, []);
         }
 
+        try
+        {
+            var response = BuildStatusResponse(DateTime.Now);
+            _lastStatusSnapshot = response;
+            return response;
+        }
+        finally { _lock.Release(); }
+    }
+
+    private ScreenTimeStatusResponse BuildStatusResponse(DateTime now)
+    {
         var statuses = _config.AppLimits.Select(limit =>
         {
             _state.AppUsage.TryGetValue(limit.ExeName, out var u);
@@ -181,7 +235,7 @@ public sealed class ScreenTimeManager
                 limit.LimitType == AppLimitType.Interval ? u?.CurrentIntervalSecondsUsed : null,
                 limit.LimitType == AppLimitType.Interval ? limit.IntervalMinutes : null,
                 limit.LimitType == AppLimitType.Interval
-                    ? ComputeIntervalResetsAt(DateTime.Now, limit)
+                    ? ComputeIntervalResetsAt(now, limit)
                     : null);
         }).ToList();
 
@@ -201,7 +255,7 @@ public sealed class ScreenTimeManager
         if (limit.LimitType != AppLimitType.Interval || limit.IntervalMinutes <= 0)
             return null;
 
-        var schedule = limit.Schedule ?? _config.DailySchedule ?? ScreenTimeSchedule.Always;
+        var schedule = GetAppSchedule(limit);
         if (!schedule.IsActiveNow(now))
             return null;
 
@@ -228,11 +282,9 @@ public sealed class ScreenTimeManager
 
     // ── Tick ──────────────────────────────────────────────────────────────────
 
-    private void Tick()
+    private void ApplyTick(TickSnapshot snap)
     {
-        if (!_sessionActive) return;
-
-        var now = DateTime.Now;
+        var now = snap.Now;
 
         // Reset on date change (midnight rollover) while a session spans midnight.
         if (_state.Date != DateOnly.FromDateTime(now))
@@ -244,23 +296,21 @@ public sealed class ScreenTimeManager
             _log.LogInformation("Screen time state reset for new day.");
         }
 
-        bool userActive = IsUserLoggedIn(out uint sessionId);
-
-        // Detect user login (session ID changed while a user is now present).
-        if (userActive && sessionId != _lastSessionId)
+        if (snap.UserActive && snap.SessionId != _lastSessionId)
         {
-            _log.LogDebug("User login detected (session {Id}).", sessionId);
-            _lockoutNotifiedAt = null; // re-notify on each new login
+            _log.LogDebug("User login detected (session {Id}).", snap.SessionId);
+            _lockoutNotifiedAt = null;
         }
-        _lastSessionId = userActive ? sessionId : 0xFFFFFFFF;
+        _lastSessionId = snap.UserActive ? snap.SessionId : 0xFFFFFFFF;
 
         if (_config.EnableDailyLimit)
-            TickDailyLimit(now, userActive, sessionId);
+            TickDailyLimit(now, snap.UserActive, snap.SessionId);
 
         if (_config.AppLimits.Count > 0)
-            TickAppLimits(now);
+            TickAppLimits(now, snap.RunningExeNames, snap.ForegroundExe);
 
-        // Persist state periodically or immediately after important changes.
+        _lastStatusSnapshot = BuildStatusResponse(now);
+
         if (_stateDirty || ++_ticksSinceSave >= 10)
         {
             ScreenTimeStateRepository.Save(_state);
@@ -315,15 +365,13 @@ public sealed class ScreenTimeManager
         }
     }
 
-    private void TickAppLimits(DateTime now)
+    private void TickAppLimits(DateTime now, HashSet<string>? running, string? foregroundExe)
     {
-        HashSet<string>? running = null;
+        if (running is null) return;
 
         foreach (var limit in _config.AppLimits)
         {
-            running ??= GetRunningExeNames();
-
-            var effectiveSchedule = limit.Schedule ?? _config.DailySchedule ?? ScreenTimeSchedule.Always;
+            var effectiveSchedule = GetAppSchedule(limit);
             bool scheduleActive = effectiveSchedule.IsActiveNow(now);
 
             if (!_state.AppUsage.TryGetValue(limit.ExeName, out var usage))
@@ -332,7 +380,7 @@ public sealed class ScreenTimeManager
                 _state.AppUsage[limit.ExeName] = usage;
             }
 
-            bool appRunning = running.Contains(limit.ExeName);
+            bool appRunning = IsAppInUse(limit.ExeName, running, foregroundExe);
 
             switch (limit.LimitType)
             {
@@ -434,6 +482,26 @@ public sealed class ScreenTimeManager
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    private static ScreenTimeSchedule GetAppSchedule(AppTimeLimit limit)
+        => limit.Schedule ?? ScreenTimeSchedule.Always;
+
+    private static bool IsAppInUse(string exeName, HashSet<string> running, string? foregroundExe)
+    {
+        var normalized = NormalizeExeName(exeName);
+        if (running.Contains(normalized))
+            return true;
+        return foregroundExe is not null
+            && string.Equals(foregroundExe, normalized, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeExeName(string name)
+    {
+        name = Path.GetFileName(name).Trim();
+        if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            name += ".exe";
+        return name;
+    }
+
     private static void KillApp(string exeName)
     {
         string baseName = Path.GetFileNameWithoutExtension(exeName);
@@ -450,11 +518,40 @@ public sealed class ScreenTimeManager
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var proc in Process.GetProcesses())
         {
-            try { set.Add(proc.ProcessName + ".exe"); }
+            try
+            {
+                // ProcessName only — MainModule per process is too slow and held the screen-time
+                // lock long enough to block the named-pipe server.
+                set.Add(NormalizeExeName(proc.ProcessName + ".exe"));
+            }
             catch { }
             finally { proc.Dispose(); }
         }
         return set;
+    }
+
+    private static string? GetForegroundExeName()
+    {
+        try
+        {
+            var hwnd = GetForegroundWindow();
+            if (hwnd == IntPtr.Zero) return null;
+            _ = GetWindowThreadProcessId(hwnd, out uint pid);
+            if (pid == 0) return null;
+            using var proc = Process.GetProcessById((int)pid);
+            try
+            {
+                var path = proc.MainModule?.FileName;
+                if (!string.IsNullOrEmpty(path))
+                    return NormalizeExeName(path);
+            }
+            catch { }
+            return NormalizeExeName(proc.ProcessName + ".exe");
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static bool IsUserLoggedIn(out uint sessionId)
@@ -485,4 +582,10 @@ public sealed class ScreenTimeManager
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 }

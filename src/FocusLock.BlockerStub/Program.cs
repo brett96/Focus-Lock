@@ -27,12 +27,43 @@ static async Task ShowToastAsync(string title, string body)
     {
         var xml = new XmlDocument();
         xml.LoadXml($@"<toast duration=""long""><visual><binding template=""ToastGeneric""><text>{EscXml(title)}</text><text>{EscXml(body)}</text></binding></visual></toast>");
+        var toast = new ToastNotification(xml)
+        {
+            // Unique tag so Windows does not suppress repeat block notifications.
+            Tag = Guid.NewGuid().ToString("N")
+        };
         var notifier = ToastNotificationManager.CreateToastNotifier(AppId);
-        notifier.Show(new ToastNotification(xml));
+        notifier.Show(toast);
     }
     catch { }
     // Brief delay so the notification center receives the request before the process exits.
-    await Task.Delay(500);
+    await Task.Delay(600);
+}
+
+static async Task<IsBlockedResponse?> QueryIsBlockedAsync(string exeName)
+{
+    for (int attempt = 0; attempt < PipeConstants.IpcRetryAttempts; attempt++)
+    {
+        if (attempt > 0)
+            await Task.Delay(PipeConstants.IpcRetryDelayMs * attempt);
+
+        try
+        {
+            using var pipe = new NamedPipeClientStream(".", PipeConstants.PipeName,
+                PipeDirection.InOut, PipeOptions.Asynchronous);
+
+            await pipe.ConnectAsync(PipeConstants.ConnectTimeoutMs);
+            var request = PipeFraming.BuildRequest(PipeConstants.IsBlocked, new IsBlockedRequest(exeName));
+            await PipeFraming.WriteMessageAsync(pipe, request);
+            var reply = await PipeFraming.ReadMessageAsync(pipe);
+            if (reply is null) continue;
+
+            return PipeFraming.ParsePayload<IsBlockedResponse>(reply);
+        }
+        catch { }
+    }
+
+    return null;
 }
 
 // Generic notification mode: --message <title> <body>
@@ -56,42 +87,32 @@ if (args.Length >= 1 && args[0] == "--notify")
 
 // IFEO mode: args[0] is the path to the originally-requested executable (passed by Windows).
 string exeName = args.Length > 0 ? Path.GetFileName(args[0]) : string.Empty;
+if (string.IsNullOrEmpty(exeName))
+    return;
 
 try
 {
-    using var pipe = new NamedPipeClientStream(".", PipeConstants.PipeName,
-        PipeDirection.InOut, PipeOptions.None);
+    var response = await QueryIsBlockedAsync(exeName);
+    if (response?.IsBlocked != true)
+        return;
 
-    pipe.Connect(200);
-
-    var request = PipeFraming.BuildRequest(PipeConstants.IsBlocked, new IsBlockedRequest(exeName));
-    await PipeFraming.WriteMessageAsync(pipe, request);
-    var reply = await PipeFraming.ReadMessageAsync(pipe);
-
-    if (reply is null) return;
-
-    var response = PipeFraming.ParsePayload<IsBlockedResponse>(reply);
-    if (response?.IsBlocked == true)
+    string body;
+    if (!string.IsNullOrWhiteSpace(response.BlockMessage))
     {
-        string body;
-        if (!string.IsNullOrWhiteSpace(response.BlockMessage))
-        {
-            body = response.BlockMessage;
-        }
-        else
-        {
-            string timeStr = response.DeadlineUtc.HasValue
-                ? response.DeadlineUtc.Value.ToLocalTime().ToString("h:mm tt")
-                : "the scheduled time";
-            string appLabel = response.AppDisplayName ?? exeName;
-            body = $"{appLabel} is blocked until {timeStr}.";
-        }
-
-        await ShowToastAsync("Focus Lock — Access Blocked", body);
+        body = response.BlockMessage;
     }
+    else
+    {
+        string timeStr = response.DeadlineUtc.HasValue
+            ? response.DeadlineUtc.Value.ToLocalTime().ToString("h:mm tt")
+            : "the scheduled time";
+        string appLabel = response.AppDisplayName ?? exeName;
+        body = $"{appLabel} is blocked until {timeStr}.";
+    }
+
+    await ShowToastAsync("Focus Lock — Access Blocked", body);
 }
 catch
 {
     // Fail-open: if the service is unreachable, exit silently.
-    // IFEO keys are removed when the session ends, so this path is rare.
 }

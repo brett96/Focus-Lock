@@ -13,6 +13,6 @@ public class AppTimeLimit
     // Interval only: length of each repeating period in minutes (e.g. 60).
     public int IntervalMinutes { get; set; } = 60;
 
-    // null = inherit the global DailySchedule (or "always" if that is also null).
+    // null = always active (all day, every day). Does not inherit the device daily limit schedule.
     public ScreenTimeSchedule? Schedule { get; set; }
 }

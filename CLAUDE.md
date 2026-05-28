@@ -52,7 +52,7 @@ FocusLock.sln
 1. IFEO (Image File Execution Options) registry redirect: `HKLM\...\Image File Execution Options\<app.exe>\Debugger` points to `FocusLock.BlockerStub.exe`. When Windows launches the blocked app, it runs the stub instead.
 2. Process kill monitor: the service polls `Process.GetProcesses()` every 2 seconds and kills any blocked processes (catches renamed exes and already-running apps).
 
-**BlockerStub**: When invoked via IFEO, connects to the Named Pipe, sends `IsBlocked { ExeName }`, and if the service confirms the block it shows a WinForms MessageBox and exits. Fails open (exits silently) if the service is unreachable.
+**BlockerStub**: IFEO launches pass the target exe path as `args[0]`. The stub queries `IsBlocked` over the named pipe (retries + 5s connect timeout), then shows a **Windows toast** with a unique `Tag` per launch (avoids OS deduplication on repeat opens). Modes: IFEO (default), `--notify domain deadline`, `--message title body`. Fails open if the service is unreachable.
 
 **Website blocking**: Appends a sentinel block to `C:\Windows\System32\drivers\etc\hosts` with `0.0.0.0 domain.com` entries, then calls `ipconfig /flushdns`. On session end, restores from a backup file.
 
@@ -112,14 +112,19 @@ Default deadline on setup page: **now + 1 hour**. `DatePicker` uses `DisplayDate
 WPF MVVM app using `CommunityToolkit.Mvvm` (`[ObservableProperty]`, `[RelayCommand]`) and `Microsoft.Extensions.DependencyInjection`. Navigation via `NavigationService` swapping `Page` instances in `MainWindow`'s `Frame`. DI container registered in `App.xaml.cs`.
 
 - **`DashboardViewModel`**: registered **singleton** — avoids idle/active flicker when navigating back from settings.
-- **`CanEndEarly`**: `IsActive && !IsStrictMode` — do not tie to refresh flags (caused button flicker every 5s).
+- **`CanEndEarly`**: `IsActive && !IsStrictMode && !IsEndingSession` — do not tie to refresh flags (caused button flicker every 5s).
+- **`IsEndingSession`**: shown for early end (after confirm) and when countdown hits zero (`BeginSessionEndingAsync`); polls until `GetSessionInfo` returns idle; `ShowNewSessionButton` = `IsIdle && !IsEndingSession`.
 - **`HasSessionBlocks`**: shows blocked apps/sites panel; scrollable via inner `ScrollViewer` (`MaxHeight=160`).
 
 Pages: `DashboardPage` (primary idle/active UI), `SetupPage` (wizard), `ActiveSessionPage` (legacy/alternate), `ScreenTimePage`, `SettingsPage`.
 
-**Screen Time enforcement**: `ScreenTimeManager.OnSessionStarted()` / `OnSessionEnded()` from `SessionManager`. Tick loop no-op when idle. Per-app over-limit uses `AppBlocker.ApplyScreenTimeBlock`. `IsBlockedResponse` includes optional `BlockMessage` for stub toasts.
+**Screen Time enforcement**: `ScreenTimeManager.OnSessionStarted()` / `OnSessionEnded()` from `SessionManager`. Tick loop no-op when idle. Per-app limits use `limit.Schedule ?? ScreenTimeSchedule.Always` — **never** inherit `DailySchedule` (device daily quota only). Process detection: running exe set (MainModule + process name) plus foreground window fallback. `HandleGetStatus` reads state under the same lock as `Tick`. Per-app over-limit uses `AppBlocker.ApplyScreenTimeBlock`. `IsBlockedResponse` includes optional `BlockMessage` for stub toasts.
 
-**End session early**: `MessageBox` Yes/No on dashboard and `ActiveSessionViewModel` before `EndSession` IPC.
+**End session early**: `MessageBox` Yes/No, then `RequestEndSessionUntilAcknowledgedAsync` (up to 3 IPC attempts) and `WaitForSessionIdleAsync` (poll `GetSessionInfo` until idle, re-send `EndSession` if still active). Timers paused while ending. `ActiveSessionViewModel` still has a simpler end path if that page is used.
+
+**Service reachability UI**: `ServiceClient.SendAsync` retries (`IpcRetryAttempts` / `IpcRetryDelayMs`). Dashboard requires **3** consecutive failed session polls before `IsServiceUnreachable`; a successful `GetStatus` or `GetScreenTimeStatus` clears the streak. Pipe `MaxConnections` = 16 for UI + BlockerStub bursts.
+
+**Notifications**: `SessionNotifier` spawns `BlockerStub` in the user session (`CreateProcessAsUser`) and waits up to 2.5s for toast delivery. `BlockPageServer` calls `ShowWebsiteBlocked` on HTTP hits (port 80). Website toasts require HTTP; app toasts use IFEO stub on each launch.
 
 `TrayManager` (`Services/TrayManager.cs`) wraps `System.Windows.Forms.NotifyIcon` — the UI project enables `<UseWindowsForms>true</UseWindowsForms>` for this. The window hides to tray on minimize and on close; Exit is only available from the tray context menu. Use `using Application = System.Windows.Application;` in any file that uses `Application` directly to resolve the WPF/WinForms ambiguity.
 

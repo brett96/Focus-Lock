@@ -21,7 +21,7 @@ public sealed class SessionNotifier(ILogger log)
         uint sessionId = WTSGetActiveConsoleSessionId();
         if (sessionId == 0xFFFFFFFF) return;
         var escaped = $"--message \"{Esc(title)}\" \"{Esc(body)}\"";
-        Spawn(sessionId, escaped);
+        Spawn(sessionId, escaped, waitForExitMs: 2500);
     }
 
     public void ShowWebsiteBlocked(string domain, string deadline)
@@ -29,13 +29,13 @@ public sealed class SessionNotifier(ILogger log)
         uint sessionId = WTSGetActiveConsoleSessionId();
         if (sessionId == 0xFFFFFFFF)
         {
-            log.LogDebug("No active console session; skipping website popup.");
+            log.LogDebug("No active console session; skipping website notification.");
             return;
         }
-        Spawn(sessionId, $"--notify \"{domain}\" \"{deadline}\"");
+        Spawn(sessionId, $"--notify \"{Esc(domain)}\" \"{Esc(deadline)}\"", waitForExitMs: 2500);
     }
 
-    private void Spawn(uint sessionId, string stubArgs)
+    private void Spawn(uint sessionId, string stubArgs, int waitForExitMs = 0)
     {
         if (!File.Exists(StubPath))
         {
@@ -68,6 +68,8 @@ public sealed class SessionNotifier(ILogger log)
                     log.LogDebug("CreateProcessAsUser failed ({Error}).", Marshal.GetLastWin32Error());
                     return;
                 }
+                if (waitForExitMs > 0)
+                    WaitForSingleObject(pi.hProcess, (uint)waitForExitMs);
                 CloseHandle(pi.hProcess);
                 CloseHandle(pi.hThread);
             }
@@ -93,6 +95,9 @@ public sealed class SessionNotifier(ILogger log)
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct STARTUPINFO

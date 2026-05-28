@@ -14,6 +14,14 @@
             <Setter Property="Background" Value="#45475A"/>
             <Setter Property="BorderThickness" Value="0"/>
         </Style>
+        <Style x:Key="EndingSessionProgress" TargetType="ProgressBar">
+            <Setter Property="Height" Value="6"/>
+            <Setter Property="Width" Value="220"/>
+            <Setter Property="IsIndeterminate" Value="True"/>
+            <Setter Property="Foreground" Value="#89B4FA"/>
+            <Setter Property="Background" Value="#45475A"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
     </Page.Resources>
 
     <Grid Margin="40">
@@ -53,8 +61,20 @@
                                TextWrapping="Wrap" TextAlignment="Center" MaxWidth="350"/>
                 </StackPanel>
 
+                <!-- Ending session (main area) -->
+                <StackPanel Visibility="{Binding IsEndingSession, Converter={StaticResource BoolToVisibility}}"
+                            Margin="0,40,0,0" HorizontalAlignment="Center">
+                    <ProgressBar Style="{StaticResource EndingSessionProgress}"
+                                 HorizontalAlignment="Center" Margin="0,0,0,16"/>
+                    <TextBlock Text="{Binding EndingSessionHeadline}" FontSize="20" Foreground="#CDD6F4"
+                               HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                    <TextBlock Text="{Binding EndingSessionDetail}"
+                               FontSize="13" Foreground="#6C7086" TextWrapping="Wrap"
+                               TextAlignment="Center" MaxWidth="360" HorizontalAlignment="Center"/>
+                </StackPanel>
+
                 <!-- Active state -->
-                <StackPanel Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel Visibility="{Binding ShowActiveSession, Converter={StaticResource BoolToVisibility}}">
                     <TextBlock Text="Session Active" FontSize="18" Foreground="#A6E3A1"
                                HorizontalAlignment="Center" Margin="0,0,0,6"/>
                     <TextBlock Text="{Binding TimeRemaining}" FontSize="48" FontWeight="Bold"
@@ -185,15 +205,23 @@
         </ScrollViewer>
 
         <!-- Action buttons -->
-        <StackPanel Grid.Row="2" HorizontalAlignment="Center" Orientation="Horizontal" Margin="0,16,0,0">
+        <StackPanel Grid.Row="2" HorizontalAlignment="Center" Margin="0,16,0,0">
             <Button Content="New Focus Session"
                     Command="{Binding StartNewCommand}"
-                    Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}}"
+                    Visibility="{Binding ShowNewSessionButton, Converter={StaticResource BoolToVisibility}}"
                     Style="{StaticResource PrimaryButton}"/>
             <Button Content="End Session Early"
                     Command="{Binding EndSessionCommand}"
                     Visibility="{Binding CanEndEarly, Converter={StaticResource BoolToVisibility}}"
                     Style="{StaticResource DangerButton}"/>
+            <StackPanel Visibility="{Binding IsEndingSession, Converter={StaticResource BoolToVisibility}}"
+                        HorizontalAlignment="Center">
+                <ProgressBar Style="{StaticResource EndingSessionProgress}"
+                             HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                <TextBlock Text="{Binding EndingSessionDetail}"
+                           Foreground="#A6ADC8" FontSize="14" HorizontalAlignment="Center"
+                           TextAlignment="Center" TextWrapping="Wrap" MaxWidth="360"/>
+            </StackPanel>
         </StackPanel>
     </Grid>
 </Page>

@@ -102,7 +102,7 @@ public sealed class BlockPageServer : IDisposable
 
             // Windows toast via BlockerStub (debounced to avoid spam on asset-heavy pages).
             if (ShouldNotifyWebsiteBlock(domain))
-                _ = Task.Run(() => _notifier.ShowWebsiteBlocked(domain, deadline), ct);
+                _notifier.ShowWebsiteBlocked(domain, deadline);
 
             byte[] body   = Encoding.UTF8.GetBytes(BuildBlockPage(domain, deadline));
             byte[] header = Encoding.ASCII.GetBytes(
@@ -120,7 +120,7 @@ public sealed class BlockPageServer : IDisposable
     private bool ShouldNotifyWebsiteBlock(string domain)
     {
         var now = DateTime.UtcNow;
-        if (_lastPopup.TryGetValue(domain, out var last) && (now - last).TotalSeconds < 10)
+        if (_lastPopup.TryGetValue(domain, out var last) && (now - last).TotalSeconds < 5)
             return false;
         _lastPopup[domain] = now;
         return true;

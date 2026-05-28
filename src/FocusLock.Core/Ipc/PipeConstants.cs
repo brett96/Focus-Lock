@@ -3,8 +3,12 @@ namespace FocusLock.Core.Ipc;
 public static class PipeConstants
 {
     public const string PipeName = "FocusLockService";
-    public const int MaxConnections = 4;
-    public const int ConnectTimeoutMs = 2000;
+
+    /// <summary>Concurrent pipe clients (UI polls, BlockerStub, etc.).</summary>
+    public const int MaxConnections = 16;
+    public const int ConnectTimeoutMs = 5000;
+    public const int IpcRetryAttempts = 3;
+    public const int IpcRetryDelayMs = 150;
 
     // Message type strings
     public const string GetStatus = "GetStatus";

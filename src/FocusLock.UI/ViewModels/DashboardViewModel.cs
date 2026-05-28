@@ -42,11 +42,23 @@ public partial class DashboardViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasScreenTime))]
     private bool _hasAppLimits;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanEndEarly))]
+    [NotifyPropertyChangedFor(nameof(ShowNewSessionButton))]
+    [NotifyPropertyChangedFor(nameof(ShowActiveSession))]
+    private bool _isEndingSession;
+
+    [ObservableProperty] private string _endingSessionHeadline = "Ending session…";
+    [ObservableProperty] private string _endingSessionDetail =
+        "Removing blocks and restoring access. This may take a few seconds.";
+
     public ObservableCollection<AppUsageDisplayItem> AppUsages { get; } = new();
 
     public bool IsIdle => SessionStatus == SessionStatus.Idle;
     public bool IsActive => SessionStatus == SessionStatus.Active;
-    public bool CanEndEarly => IsActive && !IsStrictMode;
+    public bool CanEndEarly => IsActive && !IsStrictMode && !IsEndingSession;
+    public bool ShowNewSessionButton => IsIdle && !IsEndingSession;
+    public bool ShowActiveSession => IsActive && !IsEndingSession;
     public bool IsServiceUnreachable => !IsServiceReachable;
     public bool HasSessionBlocks => BlockedApps.Count > 0 || BlockedSites.Count > 0;
     public bool HasScreenTime => ShowDailyLimit || HasAppLimits;
@@ -55,6 +67,11 @@ public partial class DashboardViewModel : ObservableObject
 
     private DateTime? _deadlineUtc;
     private bool _refreshing;
+    private bool _deadlineEndTriggered;
+    private int _sessionInfoFailureStreak;
+
+    /// <summary>Consecutive failed session polls before showing the unreachable banner.</summary>
+    private const int UnreachableFailureThreshold = 3;
 
     public DashboardViewModel(ServiceClient client, NavigationService nav)
     {
@@ -83,7 +100,8 @@ public partial class DashboardViewModel : ObservableObject
         if (remaining <= TimeSpan.Zero)
         {
             TimeRemaining = "00:00:00";
-            _ = RefreshAsync();
+            if (!_deadlineEndTriggered && !IsEndingSession)
+                _ = BeginSessionEndingAsync(isDeadlineEnd: true);
         }
         else
         {
@@ -92,17 +110,23 @@ public partial class DashboardViewModel : ObservableObject
     }
 
     /// <summary>Call after starting a session so the dashboard shows active state immediately.</summary>
-    public void PrepareForActiveSession(SessionMode mode)
+    public void PrepareForActiveSession(SessionMode mode, DateTime deadlineLocal)
     {
-        SessionStatus = SessionStatus.Active;
-        SessionMode   = mode;
-        IsStrictMode  = mode == SessionMode.Strict;
+        SessionStatus      = SessionStatus.Active;
+        SessionMode        = mode;
+        IsStrictMode       = mode == SessionMode.Strict;
+        IsServiceReachable = true;
+        _deadlineUtc         = deadlineLocal.ToUniversalTime();
+        _deadlineEndTriggered = false;
+        DeadlineText         = deadlineLocal.ToString("ddd, MMM d 'at' h:mm tt");
+        TickCountdown();
         NotifySessionVisibility();
+        OnPropertyChanged(nameof(IsServiceUnreachable));
     }
 
     public async Task RefreshAsync()
     {
-        if (_refreshing) return;
+        if (_refreshing || IsEndingSession) return;
         _refreshing = true;
         try { await RefreshCoreAsync(); }
         finally { _refreshing = false; }
@@ -113,6 +137,8 @@ public partial class DashboardViewModel : ObservableObject
         OnPropertyChanged(nameof(IsIdle));
         OnPropertyChanged(nameof(IsActive));
         OnPropertyChanged(nameof(CanEndEarly));
+        OnPropertyChanged(nameof(ShowNewSessionButton));
+        OnPropertyChanged(nameof(ShowActiveSession));
     }
 
     private async Task RefreshCoreAsync()
@@ -120,11 +146,22 @@ public partial class DashboardViewModel : ObservableObject
         var info = await _client.GetSessionInfoAsync();
         if (info is null)
         {
-            IsServiceReachable = false;
+            // Under load (BlockerStub, IFEO launches) a single timeout is common; probe with a lighter call.
+            if (await _client.GetStatusAsync() is not null)
+                MarkServiceReachable();
+            else
+                MarkServiceUnreachableIfPersistent();
+
+            if (!_deadlineUtc.HasValue && _sessionInfoFailureStreak >= UnreachableFailureThreshold)
+            {
+                SessionStatus = SessionStatus.Idle;
+                NotifySessionVisibility();
+            }
             return;
         }
 
-        IsServiceReachable = true;
+        MarkServiceReachable();
+        var wasActive = SessionStatus == SessionStatus.Active;
         SessionStatus = info.Status;
         SessionMode   = info.Mode;
         IsStrictMode  = info.Mode == SessionMode.Strict;
@@ -133,7 +170,6 @@ public partial class DashboardViewModel : ObservableObject
         BlockedSites  = info.BlockedSites ?? new();
 
         NotifySessionVisibility();
-        OnPropertyChanged(nameof(IsServiceUnreachable));
         OnPropertyChanged(nameof(ModeLabel));
         OnPropertyChanged(nameof(ModeColor));
         OnPropertyChanged(nameof(HasSessionBlocks));
@@ -146,9 +182,14 @@ public partial class DashboardViewModel : ObservableObject
         }
         else
         {
-            TimeRemaining = "--:--:--";
-            DeadlineText  = string.Empty;
-            ClearScreenTimeDisplay();
+            if (wasActive && !IsEndingSession)
+                _ = BeginSessionEndingAsync(isDeadlineEnd: true);
+            else if (!IsEndingSession)
+            {
+                TimeRemaining = "--:--:--";
+                DeadlineText  = string.Empty;
+                ClearScreenTimeDisplay();
+            }
         }
     }
 
@@ -156,6 +197,8 @@ public partial class DashboardViewModel : ObservableObject
     {
         var status = await _client.GetScreenTimeStatusAsync();
         if (status is null) return;
+
+        MarkServiceReachable();
 
         ShowDailyLimit   = status.Enabled;
         IsDailyLockedOut = status.IsLockedOutForDay;
@@ -206,6 +249,24 @@ public partial class DashboardViewModel : ObservableObject
         }
     }
 
+    private void MarkServiceReachable()
+    {
+        _sessionInfoFailureStreak = 0;
+        if (IsServiceReachable) return;
+        IsServiceReachable = true;
+        OnPropertyChanged(nameof(IsServiceUnreachable));
+    }
+
+    private void MarkServiceUnreachableIfPersistent()
+    {
+        _sessionInfoFailureStreak++;
+        if (_sessionInfoFailureStreak < UnreachableFailureThreshold)
+            return;
+        if (!IsServiceReachable) return;
+        IsServiceReachable = false;
+        OnPropertyChanged(nameof(IsServiceUnreachable));
+    }
+
     private void ClearScreenTimeDisplay()
     {
         ShowDailyLimit       = false;
@@ -226,10 +287,10 @@ public partial class DashboardViewModel : ObservableObject
     [RelayCommand]
     private void OpenSettings() => _nav.NavigateTo(new Views.SettingsPage());
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanEndEarly))]
     private async Task EndSessionAsync()
     {
-        if (SessionMode == SessionMode.Strict) return;
+        if (!CanEndEarly) return;
 
         var confirm = System.Windows.MessageBox.Show(
             "End this focus session early?\n\n" +
@@ -239,17 +300,103 @@ public partial class DashboardViewModel : ObservableObject
             System.Windows.MessageBoxImage.Question);
         if (confirm != System.Windows.MessageBoxResult.Yes) return;
 
+        await BeginSessionEndingAsync(isDeadlineEnd: false, requestEndFromService: true);
+    }
+
+    private async Task BeginSessionEndingAsync(bool isDeadlineEnd, bool requestEndFromService = false)
+    {
+        if (IsEndingSession)
+            return;
+
+        if (isDeadlineEnd)
+            _deadlineEndTriggered = true;
+
+        EndingSessionHeadline = isDeadlineEnd ? "Session complete" : "Ending session…";
+        EndingSessionDetail   = isDeadlineEnd
+            ? "Your focus session has ended. Removing blocks and restoring access…"
+            : "Removing blocks and restoring access. This may take a few seconds.";
+
+        IsEndingSession = true;
+        EndSessionCommand.NotifyCanExecuteChanged();
         _pollTimer.Stop();
+        _countdownTimer.Stop();
+
         try
         {
-            var result = await _client.EndSessionAsync();
-            if (result?.Success == true)
-                await RefreshAsync();
+            if (requestEndFromService)
+                await RequestEndSessionUntilAcknowledgedAsync();
+            await WaitForSessionIdleAsync();
         }
         finally
         {
+            IsEndingSession = false;
+            _deadlineEndTriggered = false;
+            EndSessionCommand.NotifyCanExecuteChanged();
             _pollTimer.Start();
+            _countdownTimer.Start();
         }
+    }
+
+    private async Task RequestEndSessionUntilAcknowledgedAsync()
+    {
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            var result = await _client.EndSessionAsync();
+            if (result?.Success == true)
+                return;
+            if (result?.ErrorMessage?.Contains("No active session", StringComparison.OrdinalIgnoreCase) == true)
+                return;
+
+            await Task.Delay(400);
+        }
+    }
+
+    private async Task WaitForSessionIdleAsync()
+    {
+        var timeout = DateTime.UtcNow.AddSeconds(45);
+        while (DateTime.UtcNow < timeout)
+        {
+            var info = await _client.GetSessionInfoAsync();
+            if (info is null)
+            {
+                await Task.Delay(400);
+                continue;
+            }
+
+            IsServiceReachable = true;
+            OnPropertyChanged(nameof(IsServiceUnreachable));
+
+            if (info.Status == SessionStatus.Idle)
+            {
+                ApplyIdleFromService(info);
+                return;
+            }
+
+            // Session still active — retry end once in case the first IPC was lost.
+            await _client.EndSessionAsync();
+            await Task.Delay(400);
+        }
+
+        // Timed out talking to the service; still move UI to idle locally.
+        ApplyIdleFromService(null);
+    }
+
+    private void ApplyIdleFromService(SessionInfoResponse? info)
+    {
+        SessionStatus = SessionStatus.Idle;
+        SessionMode   = SessionMode.None;
+        IsStrictMode  = false;
+        _deadlineUtc  = null;
+        TimeRemaining = "--:--:--";
+        DeadlineText  = string.Empty;
+        BlockedApps   = info?.BlockedApps ?? new();
+        BlockedSites  = info?.BlockedSites ?? new();
+        ClearScreenTimeDisplay();
+        NotifySessionVisibility();
+        OnPropertyChanged(nameof(ShowNewSessionButton));
+        OnPropertyChanged(nameof(ModeLabel));
+        OnPropertyChanged(nameof(ModeColor));
+        OnPropertyChanged(nameof(HasSessionBlocks));
     }
 
     public void StopPolling()

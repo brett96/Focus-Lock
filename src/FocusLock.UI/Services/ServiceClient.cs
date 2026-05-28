@@ -6,11 +6,27 @@ namespace FocusLock.UI.Services;
 
 /// <summary>
 /// Thin wrapper around the Named Pipe connection to FocusLockService.
-/// Each call opens a fresh connection (fire-and-forget connection pooling is not needed at this scale).
+/// Each call opens a fresh connection; retries absorb brief contention when
+/// BlockerStub and the dashboard poll at the same time.
 /// </summary>
 public class ServiceClient
 {
     public async Task<T?> SendAsync<T>(string messageType, object? payload = null, CancellationToken ct = default)
+    {
+        for (int attempt = 0; attempt < PipeConstants.IpcRetryAttempts; attempt++)
+        {
+            if (attempt > 0)
+                await Task.Delay(PipeConstants.IpcRetryDelayMs * attempt, ct);
+
+            var result = await SendOnceAsync<T>(messageType, payload, ct);
+            if (result is not null)
+                return result;
+        }
+
+        return default;
+    }
+
+    private static async Task<T?> SendOnceAsync<T>(string messageType, object? payload, CancellationToken ct)
     {
         try
         {

@@ -6,12 +6,12 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
 
 - **App blocking**
   - Uses **IFEO (Image File Execution Options)** to redirect launches of blocked executables to a tiny stub (`FocusLock.BlockerStub.exe`).
-  - When a blocked app is launched, a native Windows dialog appears: "Focus Lock has blocked access to [App]."
+  - When a blocked app is launched, a **Windows toast** appears (via `BlockerStub` over IFEO). Each launch uses a unique toast tag so repeat attempts after dismissing still notify. IPC to the service retries on timeout.
   - The service also runs a **process monitor loop** that kills blocked processes every ~2 seconds (helps catch renamed exes and already-running apps).
   - Apps are selected from a searchable dropdown of all installed applications (populated from the Windows App Paths registry); a Browse button handles apps not in the list.
 - **Website blocking**
   - The service appends a sentinel block to the Windows **hosts file** (`C:\Windows\System32\drivers\etc\hosts`), redirecting blocked domains to `127.0.0.1`, and flushes DNS.
-  - A lightweight HTTP server runs on port 80 for the duration of the session. When a blocked site is visited over HTTP, the browser shows a styled block page and a native Windows dialog popup appears ("Focus Lock has blocked access to this site"). Popup is debounced per domain (30-second cooldown). HTTPS connections are refused (still effectively blocked) but cannot show the styled page without a browser certificate.
+  - A lightweight HTTP server runs on port 80 for the duration of the session. When a blocked site is visited over **HTTP**, the browser shows a styled block page and a **Windows toast** is shown via `BlockerStub` (debounced ~5 seconds per domain). **HTTPS** visits are still blocked via the hosts file but cannot show the block page or toast without TLS interception.
 - **Session enforcement**
   - Sessions are persisted to `C:\ProgramData\FocusLock\session.json` so the service can **recover after restart/crash** and keep enforcing until the deadline.
 - **Strict mode**
@@ -25,9 +25,10 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
   - Limits are configured in the **New Focus Session** wizard (or saved ahead of time) and **only apply while a focus session is running** — same lifecycle as app/website blocking. When the session ends, counters reset and enforcement stops.
   - **Daily screen time limit** — maximum logged-in time during the session. When reached, the service disconnects the Windows session after a 5-second notification.
   - **Schedule-based activation** — limits can be restricted to specific days of the week and/or a time-of-day window (e.g. Monday–Friday 9 AM–5 PM). Outside the schedule window, limits do not accumulate or enforce.
-  - **Per-app time limits** — each app can have its own limit and schedule:
-    - *Daily Total*: at most X minutes of use within the schedule window during the session.
-    - *Interval*: at most X minutes per Y-minute interval within the schedule window.
+  - **Per-app time limits** — each app can have its own limit and optional schedule (defaults to always on). These do **not** inherit the device daily-limit schedule unless you set a per-app schedule.
+    - *Daily Total*: at most X minutes of use within the app's schedule window during the session.
+    - *Interval*: at most X minutes per Y-minute interval within the app's schedule window.
+  - Usage is tracked while the app's process is running (or in the foreground). The dashboard polls the service every second during an active session.
   - **Website categories** — block preset groups of sites (Adult, Entertainment, Social, etc.) from the session setup screen.
   - Configuration persists in `C:\ProgramData\FocusLock\screen-time-config.json`. Usage counters are session-scoped (reset when a session starts and cleared when it ends).
   - During an active session, the **dashboard** shows live countdowns for the session deadline, screen-time usage, remaining quota per limit, interval-reset times for interval-based app limits, and scrollable lists of blocked apps/sites.
@@ -40,8 +41,11 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
   - At least one restriction is required to start: blocked apps, blocked sites, or screen time limits.
 - **Dashboard UX**
   - Main active-session view is `DashboardPage` (not `ActiveSessionPage`).
-  - **End Session Early** (regular mode only) shows a Yes/No confirmation before ending.
-  - No “Loading session…” overlay — idle/active panels stay stable while status refreshes in the background.
+  - **End Session Early** (regular mode only) shows a Yes/No confirmation, then the same ending progress UI until the session is fully idle.
+  - When the **countdown reaches zero**, the same ending progress UI appears while the service cleans up (no second click needed).
+  - End-session uses retries on the IPC call and polls `GetSessionInfo` until idle so a second attempt is not required.
+  - Idle/active panels stay stable during normal background refresh (no “Loading session…” flicker).
+  - The “Cannot reach Focus Lock Service” banner only appears after **several consecutive** failed polls (not a single timeout). IPC calls retry automatically; successful screen-time polls also clear a transient warning.
 
 ## Tech stack
 

@@ -466,9 +466,10 @@ public partial class SetupViewModel : ObservableObject
             var result = await _client.StartSessionAsync(req);
             if (result?.Success == true)
             {
-                App.Services.GetRequiredService<DashboardViewModel>()
-                    .PrepareForActiveSession(SelectedMode);
+                var dashboard = App.Services.GetRequiredService<DashboardViewModel>();
+                dashboard.PrepareForActiveSession(SelectedMode, deadline);
                 _nav.NavigateToDashboard();
+                await dashboard.RefreshAsync();
             }
             else
                 ErrorMessage = result?.ErrorMessage ?? "Failed to start session.";
