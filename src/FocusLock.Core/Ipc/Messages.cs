@@ -34,3 +34,26 @@ public record SessionInfoResponse(
     TimeSpan? TimeRemaining);
 
 public record IsBlockedResponse(bool IsBlocked, DateTime? DeadlineUtc, string? AppDisplayName);
+
+// ── Screen Time ────────────────────────────────────────────────────────────────
+
+public record SetScreenTimeConfigRequest(ScreenTimeConfig Config);
+
+public record ScreenTimeConfigResponse(ScreenTimeConfig Config);
+
+public record ScreenTimeStatusResponse(
+    bool Enabled,
+    int DailyLimitMinutes,
+    int TotalSecondsUsedToday,
+    bool IsLockedOutForDay,
+    List<AppUsageStatus> AppStatuses);
+
+public record AppUsageStatus(
+    string ExeName,
+    string DisplayName,
+    AppLimitType LimitType,
+    int LimitMinutes,
+    int TotalSecondsToday,
+    bool IsBlocked,
+    int? CurrentIntervalSecondsUsed,
+    int? IntervalMinutes);

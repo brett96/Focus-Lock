@@ -1,0 +1,462 @@
+<Page x:Class="FocusLock.UI.Views.ScreenTimePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      mc:Ignorable="d"
+      Background="#1E1E2E"
+      d:DesignHeight="700" d:DesignWidth="900">
+
+    <Page.Resources>
+
+        <Style x:Key="TimeInputBox" TargetType="TextBox">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#CDD6F4"/>
+            <Setter Property="CaretBrush" Value="#CDD6F4"/>
+            <Setter Property="SelectionBrush" Value="#89B4FA"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="Padding" Value="7,6"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Style.Triggers>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="Background" Value="#45475A"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="AmPmButton" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="#CDD6F4"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="10,6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#45475A"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#383A4A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DayToggle" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#CDD6F4"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="Bd" Background="#3D3F55" BorderBrush="#585B70" BorderThickness="1"
+                                CornerRadius="6" Padding="10,5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1E3A5F"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#89B4FA"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#89B4FA"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="AppPickerToggle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="#313244"/>
+            <Setter Property="Foreground" Value="#CDD6F4"/>
+            <Setter Property="BorderBrush" Value="#585B70"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6" Padding="10,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter Grid.Column="0" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="▾" Foreground="#6C7086"
+                                           VerticalAlignment="Center" Margin="12,0,0,0"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#89B4FA"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#89B4FA"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#45475A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+    </Page.Resources>
+
+    <ScrollViewer>
+        <StackPanel Margin="40">
+            <TextBlock Text="Screen Time" FontSize="28" FontWeight="Bold"
+                       Foreground="#CDD6F4" Margin="0,0,0,28"/>
+
+            <!-- ── DAILY SCREEN TIME LIMIT ──────────────────────────────────── -->
+
+            <TextBlock Text="DAILY SCREEN TIME LIMIT" FontSize="11" FontWeight="Bold"
+                       Foreground="#6C7086" Margin="0,0,0,8"/>
+
+            <Border Background="#313244" CornerRadius="8" Padding="18,14" Margin="0,0,0,24">
+                <StackPanel>
+                    <CheckBox IsChecked="{Binding EnableDailyLimit}"
+                              Content="Enable daily screen time limit"
+                              Foreground="#CDD6F4" FontSize="14" FontWeight="SemiBold"/>
+
+                    <StackPanel Margin="0,14,0,0"
+                                Visibility="{Binding EnableDailyLimit, Converter={StaticResource BoolToVisibility}}">
+
+                        <!-- Amount -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,14" VerticalAlignment="Center">
+                            <TextBlock Text="Limit to" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center"/>
+                            <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6"
+                                    Background="#1E1E2E" Margin="10,0,4,0">
+                                <TextBox Text="{Binding DailyLimitHours, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="44" Style="{StaticResource TimeInputBox}"/>
+                            </Border>
+                            <TextBlock Text="h" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="2,0,10,0"/>
+                            <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6"
+                                    Background="#1E1E2E" Margin="0,0,4,0">
+                                <TextBox Text="{Binding DailyLimitMin, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="44" Style="{StaticResource TimeInputBox}"/>
+                            </Border>
+                            <TextBlock Text="min per day" Foreground="#A6ADC8" FontSize="13"
+                                       VerticalAlignment="Center" Margin="4,0,0,0"/>
+                        </StackPanel>
+
+                        <!-- Schedule mode radios -->
+                        <RadioButton Content="Active all day, every day"
+                                     IsChecked="{Binding DailyAllDay}"
+                                     GroupName="DailySchedule" Foreground="#CDD6F4" FontSize="13" Margin="0,0,0,6"/>
+                        <RadioButton Content="Active during a set schedule:"
+                                     IsChecked="{Binding IsCustomSchedule, Mode=TwoWay}"
+                                     GroupName="DailySchedule" Foreground="#CDD6F4" FontSize="13" Margin="0,0,0,10"/>
+
+                        <!-- Custom schedule picker -->
+                        <StackPanel Visibility="{Binding ShowSchedulePicker, Converter={StaticResource BoolToVisibility}}">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <CheckBox IsChecked="{Binding GlobalMon}" Content="Mon" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                                <CheckBox IsChecked="{Binding GlobalTue}" Content="Tue" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                                <CheckBox IsChecked="{Binding GlobalWed}" Content="Wed" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                                <CheckBox IsChecked="{Binding GlobalThu}" Content="Thu" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                                <CheckBox IsChecked="{Binding GlobalFri}" Content="Fri" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                                <CheckBox IsChecked="{Binding GlobalSat}" Content="Sat" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                                <CheckBox IsChecked="{Binding GlobalSun}" Content="Sun" Style="{DynamicResource DayToggle}"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="From" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
+                                    <TextBox Text="{Binding GlobalStartHour, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
+                                </Border>
+                                <TextBlock Text=":" Foreground="#CDD6F4" FontSize="16" VerticalAlignment="Center" Margin="4,0"/>
+                                <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
+                                    <TextBox Text="{Binding GlobalStartMinute, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
+                                </Border>
+                                <Border Background="#3D3F55" BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Margin="6,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton Content="AM" IsChecked="{Binding GlobalStartIsAm, Mode=TwoWay}" GroupName="GS_AmPm" Style="{StaticResource AmPmButton}"/>
+                                        <RadioButton Content="PM" IsChecked="{Binding GlobalStartIsPm, Mode=TwoWay}" GroupName="GS_AmPm" Style="{StaticResource AmPmButton}"/>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Text="to" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
+                                    <TextBox Text="{Binding GlobalEndHour, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
+                                </Border>
+                                <TextBlock Text=":" Foreground="#CDD6F4" FontSize="16" VerticalAlignment="Center" Margin="4,0"/>
+                                <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
+                                    <TextBox Text="{Binding GlobalEndMinute, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
+                                </Border>
+                                <Border Background="#3D3F55" BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Margin="6,0,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton Content="AM" IsChecked="{Binding GlobalEndIsAm, Mode=TwoWay}" GroupName="GE_AmPm" Style="{StaticResource AmPmButton}"/>
+                                        <RadioButton Content="PM" IsChecked="{Binding GlobalEndIsPm, Mode=TwoWay}" GroupName="GE_AmPm" Style="{StaticResource AmPmButton}"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ── APP TIME LIMITS ──────────────────────────────────────────── -->
+
+            <TextBlock Text="APP TIME LIMITS" FontSize="11" FontWeight="Bold"
+                       Foreground="#6C7086" Margin="0,0,0,8"/>
+
+            <ItemsControl ItemsSource="{Binding AppLimits}" Margin="0,0,0,8">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="#313244" CornerRadius="6" Padding="12,8" Margin="0,0,0,4">
+                            <Grid>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding DisplayName}" Foreground="#CDD6F4"
+                                               FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Foreground="#6C7086" FontSize="12" Margin="0,2,0,0">
+                                        <Run Text="{Binding LimitSummary}"/>
+                                        <Run Text=" · "/>
+                                        <Run Text="{Binding ScheduleSummary}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                                <Button Content="✕" HorizontalAlignment="Right"
+                                        Command="{Binding RemoveCommand}"
+                                        Background="Transparent" Foreground="#F38BA8"
+                                        BorderThickness="0" Cursor="Hand" FontSize="14"
+                                        VerticalAlignment="Center" Padding="8,0"/>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Button Content="+ Add App Limit"
+                    Command="{Binding ShowAddAppLimitCommand}"
+                    Visibility="{Binding IsNotAdding, Converter={StaticResource BoolToVisibility}}"
+                    Style="{StaticResource PrimaryButton}"
+                    HorizontalAlignment="Left" Margin="0,0,0,24"/>
+
+            <!-- ── ADD APP LIMIT FORM ──────────────────────────────────────── -->
+
+            <Border Background="#313244" CornerRadius="8" Padding="18,16" Margin="0,0,0,24"
+                    Visibility="{Binding IsAddingAppLimit, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="Add App Limit" FontSize="15" FontWeight="SemiBold"
+                               Foreground="#CDD6F4" Margin="0,0,0,14"/>
+
+                    <!-- App picker -->
+                    <TextBlock Text="APPLICATION" FontSize="11" FontWeight="Bold"
+                               Foreground="#6C7086" Margin="0,0,0,6"/>
+                    <Grid HorizontalAlignment="Left" Margin="0,0,0,14">
+                        <ToggleButton x:Name="DraftAppBtn"
+                                      IsChecked="{Binding IsDraftAppPopupOpen, Mode=TwoWay}"
+                                      Style="{StaticResource AppPickerToggle}" MinWidth="260">
+                            <TextBlock>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="Select application..."/>
+                                        <Setter Property="Foreground" Value="#6C7086"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasDraftExe}" Value="True">
+                                                <Setter Property="Text" Value="{Binding DraftDisplayName}"/>
+                                                <Setter Property="Foreground" Value="#CDD6F4"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </ToggleButton>
+
+                        <Popup x:Name="DraftAppPopup"
+                               PlacementTarget="{Binding ElementName=DraftAppBtn}"
+                               Placement="Bottom"
+                               IsOpen="{Binding IsDraftAppPopupOpen, Mode=TwoWay}"
+                               StaysOpen="False"
+                               AllowsTransparency="True"
+                               Closed="AppPopup_Closed">
+                            <Border Background="#313244" BorderBrush="#585B70" BorderThickness="1"
+                                    CornerRadius="6" Width="300">
+                                <StackPanel>
+                                    <Border BorderBrush="#585B70" BorderThickness="0,0,0,1" Padding="8">
+                                        <TextBox Text="{Binding DraftAppSearch, UpdateSourceTrigger=PropertyChanged}"
+                                                 Background="#1E1E2E" Foreground="#CDD6F4"
+                                                 CaretBrush="#CDD6F4" SelectionBrush="#89B4FA"
+                                                 BorderThickness="1" BorderBrush="#585B70"
+                                                 FontSize="13" Padding="8,6"/>
+                                    </Border>
+                                    <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto">
+                                        <StackPanel>
+                                            <ItemsControl ItemsSource="{Binding FilteredDraftApps}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border x:Name="Row" Padding="12,7" Cursor="Hand">
+                                                            <Border.InputBindings>
+                                                                <MouseBinding MouseAction="LeftClick"
+                                                                    Command="{Binding DataContext.SelectDraftAppCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                                                    CommandParameter="{Binding}"/>
+                                                            </Border.InputBindings>
+                                                            <TextBlock Text="{Binding DisplayName}"
+                                                                       Foreground="#CDD6F4" FontSize="13"/>
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Background" Value="Transparent"/>
+                                                                    <Style.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter Property="Background" Value="#3D3F55"/>
+                                                                        </Trigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <TextBlock Text="Loading..."
+                                                       Visibility="{Binding IsDraftAppsLoading, Converter={StaticResource BoolToVisibility}}"
+                                                       Foreground="#6C7086" Margin="14,10" FontSize="13"/>
+                                            <TextBlock Text="No applications found."
+                                                       Visibility="{Binding HasNoDraftApps, Converter={StaticResource BoolToVisibility}}"
+                                                       Foreground="#6C7086" Margin="14,10" FontSize="13"/>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                    <Border BorderBrush="#585B70" BorderThickness="0,1,0,0" Padding="8">
+                                        <Button Content="Browse for unlisted app..."
+                                                Command="{Binding BrowseDraftAppCommand}"
+                                                Background="Transparent" Foreground="#89B4FA"
+                                                BorderThickness="0" Cursor="Hand"
+                                                FontSize="13" HorizontalAlignment="Left" Padding="2,4"/>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+
+                    <!-- Limit type -->
+                    <TextBlock Text="LIMIT TYPE" FontSize="11" FontWeight="Bold"
+                               Foreground="#6C7086" Margin="0,0,0,8"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                        <RadioButton Content="Daily Total" GroupName="DraftLimitType"
+                                     IsChecked="{Binding IsDailyTotalDraft, Mode=TwoWay}"
+                                     Foreground="#CDD6F4" FontSize="13" Margin="0,0,20,0" Cursor="Hand"/>
+                        <RadioButton Content="Interval (X min every Y min)" GroupName="DraftLimitType"
+                                     IsChecked="{Binding IsIntervalDraft, Mode=TwoWay}"
+                                     Foreground="#CDD6F4" FontSize="13" Cursor="Hand"/>
+                    </StackPanel>
+
+                    <!-- Daily total -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,14"
+                                Visibility="{Binding IsDailyTotalDraft, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="Max" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center"/>
+                        <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E" Margin="8,0,4,0">
+                            <TextBox Text="{Binding DraftLimitHours, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
+                        </Border>
+                        <TextBlock Text="h" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="2,0,8,0"/>
+                        <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E" Margin="0,0,4,0">
+                            <TextBox Text="{Binding DraftLimitMin, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
+                        </Border>
+                        <TextBlock Text="min per day" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                    </StackPanel>
+
+                    <!-- Interval -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,14"
+                                Visibility="{Binding IsIntervalDraft, Converter={StaticResource BoolToVisibility}}">
+                        <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
+                            <TextBox Text="{Binding DraftIntervalLimit, UpdateSourceTrigger=PropertyChanged}" Width="52" Style="{StaticResource TimeInputBox}"/>
+                        </Border>
+                        <TextBlock Text="min every" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="8,0"/>
+                        <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
+                            <TextBox Text="{Binding DraftIntervalPeriod, UpdateSourceTrigger=PropertyChanged}" Width="60" Style="{StaticResource TimeInputBox}"/>
+                        </Border>
+                        <TextBlock Text="min" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    </StackPanel>
+
+                    <!-- Custom schedule for this app -->
+                    <CheckBox Content="Use a custom schedule for this app (default: same as global)"
+                              IsChecked="{Binding DraftUseCustomSchedule}"
+                              Foreground="#A6ADC8" FontSize="13" Margin="0,0,0,10"/>
+
+                    <StackPanel Visibility="{Binding ShowDraftSchedulePicker, Converter={StaticResource BoolToVisibility}}"
+                                Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <CheckBox IsChecked="{Binding DraftMon}" Content="Mon" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                            <CheckBox IsChecked="{Binding DraftTue}" Content="Tue" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                            <CheckBox IsChecked="{Binding DraftWed}" Content="Wed" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                            <CheckBox IsChecked="{Binding DraftThu}" Content="Thu" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                            <CheckBox IsChecked="{Binding DraftFri}" Content="Fri" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                            <CheckBox IsChecked="{Binding DraftSat}" Content="Sat" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                            <CheckBox IsChecked="{Binding DraftSun}" Content="Sun" Style="{DynamicResource DayToggle}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="From" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
+                                <TextBox Text="{Binding DraftStartHour, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
+                            </Border>
+                            <TextBlock Text=":" Foreground="#CDD6F4" FontSize="16" VerticalAlignment="Center" Margin="4,0"/>
+                            <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
+                                <TextBox Text="{Binding DraftStartMinute, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
+                            </Border>
+                            <Border Background="#3D3F55" BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Margin="6,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton Content="AM" IsChecked="{Binding DraftStartIsAm, Mode=TwoWay}" GroupName="DS_AmPm" Style="{StaticResource AmPmButton}"/>
+                                    <RadioButton Content="PM" IsChecked="{Binding DraftStartIsPm, Mode=TwoWay}" GroupName="DS_AmPm" Style="{StaticResource AmPmButton}"/>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Text="to" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
+                                <TextBox Text="{Binding DraftEndHour, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
+                            </Border>
+                            <TextBlock Text=":" Foreground="#CDD6F4" FontSize="16" VerticalAlignment="Center" Margin="4,0"/>
+                            <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E">
+                                <TextBox Text="{Binding DraftEndMinute, UpdateSourceTrigger=PropertyChanged}" Width="40" Style="{StaticResource TimeInputBox}"/>
+                            </Border>
+                            <Border Background="#3D3F55" BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Margin="6,0,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton Content="AM" IsChecked="{Binding DraftEndIsAm, Mode=TwoWay}" GroupName="DE_AmPm" Style="{StaticResource AmPmButton}"/>
+                                    <RadioButton Content="PM" IsChecked="{Binding DraftEndIsPm, Mode=TwoWay}" GroupName="DE_AmPm" Style="{StaticResource AmPmButton}"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button Content="Add" Command="{Binding AddAppLimitCommand}"
+                                Style="{StaticResource PrimaryButton}"/>
+                        <Button Content="Cancel" Command="{Binding CancelAddCommand}"
+                                Style="{StaticResource DangerButton}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ── TODAY'S USAGE ─────────────────────────────────────────────── -->
+
+            <TextBlock Text="TODAY'S USAGE" FontSize="11" FontWeight="Bold"
+                       Foreground="#6C7086" Margin="0,0,0,8"
+                       Visibility="{Binding HasStatusSummary, Converter={StaticResource BoolToVisibility}}"/>
+
+            <Border Background="#313244" CornerRadius="8" Padding="18,14" Margin="0,0,0,24"
+                    Visibility="{Binding HasStatusSummary, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="{Binding StatusUsageSummary}" Foreground="#CDD6F4"
+                           FontSize="13" LineHeight="22"/>
+            </Border>
+
+            <!-- ── SAVE / FEEDBACK ──────────────────────────────────────────── -->
+
+            <TextBlock Text="{Binding SaveMessage}" Foreground="#A6E3A1" FontSize="13" Margin="0,0,0,12"
+                       Visibility="{Binding HasSaveMessage, Converter={StaticResource BoolToVisibility}}"/>
+
+            <StackPanel Orientation="Horizontal">
+                <Button Content="Save Changes" Command="{Binding SaveCommand}"
+                        Style="{StaticResource PrimaryButton}"/>
+                <Button Content="← Back" Command="{Binding BackCommand}"
+                        Style="{StaticResource PrimaryButton}"/>
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>

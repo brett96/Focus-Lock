@@ -4,99 +4,92 @@ namespace FocusLock.Service.Blocking;
 
 /// <summary>
 /// Spawns FocusLock.BlockerStub.exe in the active user's interactive desktop session
-/// to show a native popup dialog. Called by BlockPageServer when a blocked website is visited.
-/// The service runs as SYSTEM (session 0), so CreateProcessAsUser is required to place
-/// the popup on the user's visible desktop.
+/// to show a native popup dialog. The service runs as SYSTEM (session 0), so
+/// CreateProcessAsUser is required to place the popup on the user's visible desktop.
 /// </summary>
 public sealed class SessionNotifier(ILogger log)
 {
     private static readonly string StubPath =
         Path.Combine(AppContext.BaseDirectory, "FocusLock.BlockerStub.exe");
 
-    private const uint CREATE_NO_WINDOW    = 0x08000000;
-    private const int  STARTF_USESHOWWINDOW = 0x00000001;
-    private const short SW_SHOW             = 5;
+    private const uint  CREATE_NO_WINDOW     = 0x08000000;
+    private const int   STARTF_USESHOWWINDOW = 0x00000001;
+    private const short SW_SHOW              = 5;
+
+    public void ShowMessage(string title, string body)
+    {
+        uint sessionId = WTSGetActiveConsoleSessionId();
+        if (sessionId == 0xFFFFFFFF) return;
+        var escaped = $"--message \"{Esc(title)}\" \"{Esc(body)}\"";
+        Spawn(sessionId, escaped);
+    }
 
     public void ShowWebsiteBlocked(string domain, string deadline)
     {
-        if (!File.Exists(StubPath))
+        uint sessionId = WTSGetActiveConsoleSessionId();
+        if (sessionId == 0xFFFFFFFF)
         {
-            log.LogWarning("BlockerStub not found at {Path}; skipping website popup.", StubPath);
+            log.LogDebug("No active console session; skipping website popup.");
             return;
         }
+        Spawn(sessionId, $"--notify \"{domain}\" \"{deadline}\"");
+    }
 
+    private void Spawn(uint sessionId, string stubArgs)
+    {
+        if (!File.Exists(StubPath))
+        {
+            log.LogWarning("BlockerStub not found at {Path}; skipping popup.", StubPath);
+            return;
+        }
         try
         {
-            uint sessionId = WTSGetActiveConsoleSessionId();
-            if (sessionId == 0xFFFFFFFF)
-            {
-                log.LogDebug("No active console session; skipping website popup.");
-                return;
-            }
-
             if (!WTSQueryUserToken(sessionId, out var userToken))
             {
-                log.LogDebug("WTSQueryUserToken failed ({Error}); skipping website popup.",
+                log.LogDebug("WTSQueryUserToken failed ({Error}); skipping popup.",
                     Marshal.GetLastWin32Error());
                 return;
             }
-
             try
             {
                 var si = new STARTUPINFO
                 {
-                    cb = Marshal.SizeOf<STARTUPINFO>(),
-                    lpDesktop = "WinSta0\\Default",
-                    dwFlags   = STARTF_USESHOWWINDOW,
+                    cb          = Marshal.SizeOf<STARTUPINFO>(),
+                    lpDesktop   = "WinSta0\\Default",
+                    dwFlags     = STARTF_USESHOWWINDOW,
                     wShowWindow = SW_SHOW
                 };
-
-                // domain has no spaces; deadline may (e.g. "Fri, Dec 5 at 5:00 PM").
-                string cmdLine = $"\"{StubPath}\" --notify \"{domain}\" \"{deadline}\"";
-
+                string cmdLine = $"\"{StubPath}\" {stubArgs}";
                 if (!CreateProcessAsUser(userToken, null, cmdLine,
                         IntPtr.Zero, IntPtr.Zero, false,
                         CREATE_NO_WINDOW, IntPtr.Zero, null,
                         ref si, out var pi))
                 {
-                    log.LogDebug("CreateProcessAsUser failed ({Error}).",
-                        Marshal.GetLastWin32Error());
+                    log.LogDebug("CreateProcessAsUser failed ({Error}).", Marshal.GetLastWin32Error());
                     return;
                 }
-
                 CloseHandle(pi.hProcess);
                 CloseHandle(pi.hThread);
             }
-            finally
-            {
-                CloseHandle(userToken);
-            }
+            finally { CloseHandle(userToken); }
         }
-        catch (Exception ex)
-        {
-            log.LogDebug(ex, "Failed to show website blocked notification.");
-        }
+        catch (Exception ex) { log.LogDebug(ex, "Spawn popup failed."); }
     }
 
+    private static string Esc(string s) => s.Replace("\"", "\\\"");
+
     [DllImport("kernel32.dll")]
-    private static extern uint WTSGetActiveConsoleSessionId();
+    internal static extern uint WTSGetActiveConsoleSessionId();
 
     [DllImport("wtsapi32.dll", SetLastError = true)]
     private static extern bool WTSQueryUserToken(uint sessionId, out IntPtr phToken);
 
     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool CreateProcessAsUser(
-        IntPtr hToken,
-        string? lpApplicationName,
-        string  lpCommandLine,
-        IntPtr  lpProcessAttributes,
-        IntPtr  lpThreadAttributes,
-        bool    bInheritHandles,
-        uint    dwCreationFlags,
-        IntPtr  lpEnvironment,
-        string? lpCurrentDirectory,
-        ref STARTUPINFO         lpStartupInfo,
-        out PROCESS_INFORMATION lpProcessInformation);
+        IntPtr hToken, string? lpApplicationName, string lpCommandLine,
+        IntPtr lpProcessAttributes, IntPtr lpThreadAttributes, bool bInheritHandles,
+        uint dwCreationFlags, IntPtr lpEnvironment, string? lpCurrentDirectory,
+        ref STARTUPINFO lpStartupInfo, out PROCESS_INFORMATION lpProcessInformation);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
@@ -104,14 +97,12 @@ public sealed class SessionNotifier(ILogger log)
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct STARTUPINFO
     {
-        public int    cb;
+        public int cb;
         [MarshalAs(UnmanagedType.LPWStr)] public string? lpReserved;
         [MarshalAs(UnmanagedType.LPWStr)] public string? lpDesktop;
         [MarshalAs(UnmanagedType.LPWStr)] public string? lpTitle;
-        public int    dwX, dwY, dwXSize, dwYSize;
-        public int    dwXCountChars, dwYCountChars, dwFillAttribute;
-        public int    dwFlags;
-        public short  wShowWindow, cbReserved2;
+        public int  dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+        public short wShowWindow, cbReserved2;
         public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
     }
 

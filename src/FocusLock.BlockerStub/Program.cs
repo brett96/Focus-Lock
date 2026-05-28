@@ -2,6 +2,20 @@ using System.IO.Pipes;
 using System.Windows.Forms;
 using FocusLock.Core.Ipc;
 
+// Generic notification mode: launched by the service with --message <title> <body>.
+if (args.Length >= 1 && args[0] == "--message")
+{
+    string title = args.Length >= 2 ? args[1] : "Focus Lock";
+    string body  = args.Length >= 3 ? args[2] : string.Empty;
+    MessageBox.Show(
+        body, title,
+        MessageBoxButtons.OK,
+        MessageBoxIcon.Warning,
+        MessageBoxDefaultButton.Button1,
+        MessageBoxOptions.DefaultDesktopOnly);
+    return;
+}
+
 // Website-blocked notification mode: launched by the service with --notify <domain> <deadline>.
 if (args.Length >= 1 && args[0] == "--notify")
 {

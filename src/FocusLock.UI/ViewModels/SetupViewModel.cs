@@ -106,7 +106,7 @@ public partial class SetupViewModel : ObservableObject
 
     private async Task LoadAvailableAppsAsync()
     {
-        var apps = await Task.Run(LoadInstalledApps);
+        var apps = await InstalledAppsLoader.LoadAsync();
         foreach (var app in apps)
         {
             app.PropertyChanged += OnSelectableAppChanged;
@@ -134,53 +134,6 @@ public partial class SetupViewModel : ObservableObject
         }
     }
 
-    private static List<SelectableApp> LoadInstalledApps()
-    {
-        var seen   = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<SelectableApp>();
-
-        var specs = new[]
-        {
-            (RegistryHive.LocalMachine, RegistryView.Registry64),
-            (RegistryHive.LocalMachine, RegistryView.Registry32),
-            (RegistryHive.CurrentUser,  RegistryView.Default),
-        };
-
-        foreach (var (hive, view) in specs)
-        {
-            try
-            {
-                using var baseKey  = RegistryKey.OpenBaseKey(hive, view);
-                using var appPaths = baseKey.OpenSubKey(
-                    @"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths");
-                if (appPaths is null) continue;
-
-                foreach (var keyName in appPaths.GetSubKeyNames())
-                {
-                    try
-                    {
-                        using var sub     = appPaths.OpenSubKey(keyName);
-                        var       exePath = (sub?.GetValue(string.Empty) as string)?.Trim().Trim('"');
-                        if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) continue;
-
-                        var exeName = Path.GetFileName(exePath);
-                        if (!seen.Add(exeName)) continue;
-                        if (SystemProcessList.IsSystemExe(exeName)) continue;
-
-                        var displayName = FileVersionInfo.GetVersionInfo(exePath).ProductName;
-                        if (string.IsNullOrWhiteSpace(displayName))
-                            displayName = Path.GetFileNameWithoutExtension(exeName);
-
-                        result.Add(new SelectableApp { DisplayName = displayName!, ExeName = exeName });
-                    }
-                    catch { /* skip individual app errors */ }
-                }
-            }
-            catch { /* skip registry access errors */ }
-        }
-
-        return result.OrderBy(a => a.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
-    }
 
     [RelayCommand]
     private void RemoveApp(BlockedApp app)

@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using FocusLock.Core.Ipc;
+using FocusLock.Core.Models;
 
 namespace FocusLock.UI.Services;
 
@@ -39,4 +40,13 @@ public class ServiceClient
 
     public Task<AckResponse?> EndSessionAsync(string reason = "User request", CancellationToken ct = default)
         => SendAsync<AckResponse>(PipeConstants.EndSession, new EndSessionRequest(reason), ct);
+
+    public Task<ScreenTimeConfigResponse?> GetScreenTimeConfigAsync(CancellationToken ct = default)
+        => SendAsync<ScreenTimeConfigResponse>(PipeConstants.GetScreenTimeConfig, ct: ct);
+
+    public Task<AckResponse?> SetScreenTimeConfigAsync(ScreenTimeConfig config, CancellationToken ct = default)
+        => SendAsync<AckResponse>(PipeConstants.SetScreenTimeConfig, new SetScreenTimeConfigRequest(config), ct);
+
+    public Task<ScreenTimeStatusResponse?> GetScreenTimeStatusAsync(CancellationToken ct = default)
+        => SendAsync<ScreenTimeStatusResponse>(PipeConstants.GetScreenTimeStatus, ct: ct);
 }

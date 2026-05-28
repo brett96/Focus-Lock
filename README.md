@@ -21,6 +21,15 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
     2. **IFEO registry ACLs** — each Image File Execution Options key written for the session gets a deny-write ACL for `Administrators`, preventing manual deletion or modification. The service (running as LocalSystem) can still repair keys via the monitor loop.
     3. **Hosts file ACL** — the hosts file gets a deny-write ACL for `Administrators`, preventing the sentinel block from being manually removed. The service retains full control so it can restore the file on session end.
   - The user keeps their admin rights for all other purposes — no risk of being locked out of their own machine.
+- **Screen Time Limits** *(optional, independent of Focus Lock sessions)*
+  - **Daily screen time limit** — set a maximum number of minutes the user can be logged into Windows per day. When the limit is reached the service disconnects the active session; every subsequent login for the rest of the day is disconnected after a 5-second notification, then resets at midnight.
+  - **Schedule-based activation** — limits can be restricted to specific days of the week and/or a time-of-day window (e.g. Monday–Friday 9 AM–5 PM). Outside the schedule the limits are inactive and no enforcement occurs.
+  - **Per-app time limits** — each app can have its own independent limit and schedule, with two enforcement modes:
+    - *Daily Total*: the app may be used for at most X minutes within the schedule window each day. Once the quota is used the app is force-closed for the remainder of that window; it is unlocked automatically when the schedule ends (e.g. blocked at 2 PM under a 9 AM–5 PM schedule → unlocked at 5 PM; counter resets the next day).
+    - *Interval*: the app may be used for at most X minutes per Y-minute interval, measured from the schedule start. When the quota for an interval is exhausted the app is force-closed until the next interval begins.
+  - Each app limit can optionally override the global schedule with its own custom days/hours.
+  - Configuration is saved to `C:\ProgramData\FocusLock\screen-time-config.json`; daily usage counters are saved to `screen-time-state.json` and reset automatically at midnight.
+  - Screen Time is configured via the **⏱** button on the dashboard.
 
 ## Tech stack
 
@@ -49,6 +58,14 @@ build/
   build.ps1               Full publish + installer build orchestrator
 ```
 
+Key data files written by the service to `C:\ProgramData\FocusLock\`:
+
+| File | Contents |
+|---|---|
+| `session.json` | Active Focus Lock session (apps/sites blocked, deadline, mode) |
+| `screen-time-config.json` | Screen Time limit configuration (persists across days) |
+| `screen-time-state.json` | Today's usage counters; reset automatically at midnight |
+
 ## How it’s built (high-level architecture)
 
 ### UI ↔ Service (IPC)
@@ -61,11 +78,12 @@ The wire framing is **4-byte little-endian length prefix + UTF-8 JSON**, impleme
 
 ### Service runtime loops
 
-The service runs three loops concurrently:
+The service runs four loops concurrently:
 
 - **Pipe server**: handles UI/stub requests
 - **Monitor loop**: kills blocked processes and repairs IFEO keys
 - **Deadline watcher**: ends the session automatically when the deadline is reached
+- **Screen Time tracker**: 1-second tick loop that accumulates user session time, enforces daily limits (via `WTSDisconnectSession`), and force-closes apps that have exceeded their daily or interval quota
 
 ### Blocker stub (IFEO target)
 
@@ -73,6 +91,8 @@ When Windows launches a blocked app, IFEO redirects it to `FocusLock.BlockerStub
 
 - shows a message and exits when blocked
 - **fails open** (exits silently) if the service can’t be reached
+
+The stub also accepts `--notify <domain> <deadline>` (website block popup) and `--message <title> <body>` (generic notification, used by Screen Time when the daily limit is reached).
 
 ## Build, test, and release
 

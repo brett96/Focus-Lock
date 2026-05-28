@@ -16,6 +16,7 @@ public class SessionWorker : BackgroundService
     private readonly WebsiteBlocker _websiteBlocker;
     private readonly StrictModeManager _strictMode;
     private readonly BlockPageServer _blockPageServer;
+    private readonly ScreenTimeManager _screenTime;
     private readonly SemaphoreSlim _sessionLock = new(1, 1);
 
     public SessionWorker(ILogger<SessionWorker> log)
@@ -25,6 +26,7 @@ public class SessionWorker : BackgroundService
         _websiteBlocker = new WebsiteBlocker(log);
         _strictMode = new StrictModeManager(log);
         _blockPageServer = new BlockPageServer(log, new SessionNotifier(log));
+        _screenTime = new ScreenTimeManager(log);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -35,8 +37,9 @@ public class SessionWorker : BackgroundService
         var pipeTask = RunPipeServerAsync(stoppingToken);
         var monitorTask = RunMonitorLoopAsync(stoppingToken);
         var deadlineTask = RunDeadlineWatcherAsync(stoppingToken);
+        var screenTimeTask = _screenTime.RunAsync(stoppingToken);
 
-        await Task.WhenAll(pipeTask, monitorTask, deadlineTask);
+        await Task.WhenAll(pipeTask, monitorTask, deadlineTask, screenTimeTask);
     }
 
     // ── Initialization ────────────────────────────────────────────────────────
@@ -153,6 +156,9 @@ public class SessionWorker : BackgroundService
             PipeConstants.StartSession => BuildReply(await StartSessionAsync(msg, ct)),
             PipeConstants.EndSession => BuildReply(EndSessionRequest(msg)),
             PipeConstants.IsBlocked => BuildReply(CheckIsBlocked(msg)),
+            PipeConstants.GetScreenTimeConfig => BuildReply(_screenTime.HandleGetConfig()),
+            PipeConstants.SetScreenTimeConfig => BuildReply(await _screenTime.HandleSetConfigAsync(msg)),
+            PipeConstants.GetScreenTimeStatus => BuildReply(_screenTime.HandleGetStatus()),
             _ => BuildReply(new AckResponse(false, $"Unknown message type: {msg.Type}"))
         };
     }

@@ -12,4 +12,7 @@ public static class PipeConstants
     public const string StartSession = "StartSession";
     public const string EndSession = "EndSession";
     public const string IsBlocked = "IsBlocked";
+    public const string GetScreenTimeConfig = "GetScreenTimeConfig";
+    public const string SetScreenTimeConfig = "SetScreenTimeConfig";
+    public const string GetScreenTimeStatus = "GetScreenTimeStatus";
 }

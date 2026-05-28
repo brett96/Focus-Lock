@@ -20,6 +20,7 @@ public partial class App : Application
         services.AddTransient<SetupViewModel>();
         services.AddTransient<ActiveSessionViewModel>();
         services.AddTransient<SettingsViewModel>();
+        services.AddTransient<ScreenTimeViewModel>();
         Services = services.BuildServiceProvider();
 
         var mainWindow = new MainWindow();
