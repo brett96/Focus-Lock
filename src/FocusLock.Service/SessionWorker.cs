@@ -1,8 +1,7 @@
 using System.IO.Pipes;
-using System.Security.AccessControl;
-using System.Security.Principal;
 using FocusLock.Core.Ipc;
 using FocusLock.Core.Models;
+using FocusLock.Service.Ipc;
 
 namespace FocusLock.Service;
 
@@ -54,12 +53,6 @@ public class SessionWorker : BackgroundService
 
     private static NamedPipeServerStream CreatePipeServer()
     {
-        var security = new PipeSecurity();
-        security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.WorldSid, null),
-            PipeAccessRights.ReadWrite,
-            AccessControlType.Allow));
-
         return NamedPipeServerStreamAcl.Create(
             PipeConstants.PipeName,
             PipeDirection.InOut,
@@ -67,7 +60,7 @@ public class SessionWorker : BackgroundService
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous,
             0, 0,
-            security);
+            PipeSecurityHelper.CreatePipeSecurity());
     }
 
     private async Task HandleClientAsync(NamedPipeServerStream pipe, CancellationToken ct)
@@ -76,8 +69,22 @@ public class SessionWorker : BackgroundService
         {
             try
             {
-                var msg = await PipeFraming.ReadMessageAsync(pipe, ct);
+                using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                readCts.CancelAfter(TimeSpan.FromSeconds(PipeConstants.IpcReadTimeoutSeconds));
+
+                var msg = await PipeFraming.ReadMessageAsync(pipe, readCts.Token);
                 if (msg is null) return;
+
+                if (PipeSecurityHelper.RequiresAdministrator(msg.Type))
+                {
+                    if (!PipeSecurityHelper.TryGetClientIsAdministrator(pipe, out var isAdmin) || !isAdmin)
+                    {
+                        await PipeFraming.WriteMessageAsync(pipe,
+                            BuildReply(new AckResponse(false, "Administrator privileges required.")),
+                            ct);
+                        return;
+                    }
+                }
 
                 PipeMessage response;
                 try

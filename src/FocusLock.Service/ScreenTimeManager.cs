@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using FocusLock.Core.Ipc;
 using FocusLock.Core.Models;
+using FocusLock.Core.ScreenTime;
 using FocusLock.Core.Storage;
 using FocusLock.Service.Blocking;
 
@@ -15,6 +16,7 @@ public sealed class ScreenTimeManager
 {
     private readonly ILogger _log;
     private readonly AppBlocker _appBlocker;
+    private readonly SessionNotifier _notifier;
     private readonly Func<FocusSession?> _getSession;
 
     private ScreenTimeConfig _config;
@@ -27,6 +29,7 @@ public sealed class ScreenTimeManager
     {
         _log        = log;
         _appBlocker = appBlocker;
+        _notifier   = new SessionNotifier(log);
         _getSession = getSession;
         _config     = ScreenTimeConfigRepository.Load();
         if (!_config.EnableDailyLimit)
@@ -239,12 +242,24 @@ public sealed class ScreenTimeManager
                     : null);
         }).ToList();
 
+        var dailySchedule = _config.DailySchedule;
+        var schedule = GetEffectiveDailySchedule();
+        var phase = ScreenTimeScheduleHelper.GetPhase(schedule, now);
+        bool scheduleActive = phase == DailySchedulePhase.Active;
+
         return new ScreenTimeStatusResponse(
             _config.EnableDailyLimit,
             _config.DailyLimitMinutes,
             _state.TotalSecondsUsed,
-            _state.IsLockedOutForDay,
-            statuses);
+            _state.IsLockedOutForDay && scheduleActive,
+            statuses,
+            DailyHasCustomSchedule: _config.EnableDailyLimit && dailySchedule is not null,
+            DailyScheduleActiveNow: scheduleActive,
+            DailyScheduleWindowEndedForToday: phase == DailySchedulePhase.AfterWindowToday,
+            DailyScheduleLabel: _config.EnableDailyLimit ? ScreenTimeScheduleHelper.Describe(schedule) : null,
+            DailyScheduleResumesAtLocal: _config.EnableDailyLimit && !scheduleActive
+                ? ScreenTimeScheduleHelper.GetNextActiveStart(schedule, now)
+                : null);
     }
 
     /// <summary>
@@ -321,18 +336,45 @@ public sealed class ScreenTimeManager
 
     private void TickDailyLimit(DateTime now, bool userActive, uint sessionId)
     {
-        var schedule = _config.DailySchedule ?? ScreenTimeSchedule.Always;
-        bool scheduleActive = schedule.IsActiveNow(now);
+        var schedule = GetEffectiveDailySchedule();
+        bool scheduleActive = ScreenTimeScheduleHelper.IsEnforcementActive(schedule, now);
+
+        if (!scheduleActive)
+        {
+            _lockoutNotifiedAt = null;
+            if (_state.IsLockedOutForDay)
+            {
+                _state.IsLockedOutForDay = false;
+                _stateDirty = true;
+            }
+        }
 
         // Accumulate active time while user is logged in and schedule is active.
         if (scheduleActive && userActive)
         {
             _state.TotalSecondsUsed++;
-            if (!_state.IsLockedOutForDay && _state.TotalSecondsUsed >= _config.DailyLimitMinutes * 60)
+            if (!_state.IsLockedOutForDay)
             {
-                _state.IsLockedOutForDay = true;
-                _stateDirty = true;
-                _log.LogInformation("Daily screen time limit reached ({Min} min).", _config.DailyLimitMinutes);
+                int limitSec = _config.DailyLimitMinutes * 60;
+                int remaining = limitSec - _state.TotalSecondsUsed;
+                bool dailyWarn5 = _state.DailyWarned5Min;
+                bool dailyWarn1 = _state.DailyWarned1Min;
+                MaybeNotifyRemaining(
+                    "Focus Lock — Daily Screen Time",
+                    "your device screen time",
+                    remaining,
+                    limitSec,
+                    ref dailyWarn5,
+                    ref dailyWarn1);
+                _state.DailyWarned5Min = dailyWarn5;
+                _state.DailyWarned1Min = dailyWarn1;
+
+                if (_state.TotalSecondsUsed >= limitSec)
+                {
+                    _state.IsLockedOutForDay = true;
+                    _stateDirty = true;
+                    _log.LogInformation("Daily screen time limit reached ({Min} min).", _config.DailyLimitMinutes);
+                }
             }
         }
 
@@ -347,8 +389,7 @@ public sealed class ScreenTimeManager
                 _log.LogInformation("Showing daily limit notification and scheduling disconnect.");
                 try
                 {
-                    var notifier = new SessionNotifier(_log);
-                    notifier.ShowMessage(
+                    _notifier.ShowMessage(
                         "Focus Lock — Screen Time Limit Reached",
                         $"Your daily screen time limit of {timeStr} has been reached.\n\nYou will be signed out momentarily.");
                 }
@@ -412,20 +453,37 @@ public sealed class ScreenTimeManager
         if (appRunning)
         {
             usage.TotalSecondsToday++;
-            if (!usage.IsBlockedToday && usage.TotalSecondsToday >= limit.LimitMinutes * 60)
+            int limitSec = limit.LimitMinutes * 60;
+            if (!usage.IsBlockedToday)
             {
-                usage.IsBlockedToday = true;
-                _stateDirty = true;
-                _appBlocker.ApplyScreenTimeBlock(limit.ExeName, _getSession());
-                _log.LogInformation("App {Exe} daily limit reached ({Min} min).",
-                    limit.ExeName, limit.LimitMinutes);
-                try
+                int remaining = limitSec - usage.TotalSecondsToday;
+                bool warned5 = usage.Warned5Min;
+                bool warned1 = usage.Warned1Min;
+                MaybeNotifyRemaining(
+                    "Focus Lock — App Time Limit",
+                    limit.DisplayName,
+                    remaining,
+                    limitSec,
+                    ref warned5,
+                    ref warned1);
+                usage.Warned5Min = warned5;
+                usage.Warned1Min = warned1;
+
+                if (usage.TotalSecondsToday >= limitSec)
                 {
-                    new SessionNotifier(_log).ShowMessage(
-                        "Focus Lock — App Time Limit",
-                        $"{limit.DisplayName} has reached its {limit.LimitMinutes}-minute limit for this session and will be closed.");
+                    usage.IsBlockedToday = true;
+                    _stateDirty = true;
+                    _appBlocker.ApplyScreenTimeBlock(limit.ExeName, _getSession());
+                    _log.LogInformation("App {Exe} daily limit reached ({Min} min).",
+                        limit.ExeName, limit.LimitMinutes);
+                    try
+                    {
+                        _notifier.ShowMessage(
+                            "Focus Lock — App Time Limit",
+                            $"{limit.DisplayName} has reached its {limit.LimitMinutes}-minute limit for this session and will be closed.");
+                    }
+                    catch (Exception ex) { _log.LogDebug(ex, "Failed to show app limit notification."); }
                 }
-                catch (Exception ex) { _log.LogDebug(ex, "Failed to show app limit notification."); }
             }
         }
 
@@ -452,27 +510,45 @@ public sealed class ScreenTimeManager
             usage.CurrentIntervalIndex = intervalIndex;
             usage.CurrentIntervalSecondsUsed = 0;
             usage.IsBlockedInCurrentInterval = false;
+            usage.Warned5Min = false;
+            usage.Warned1Min = false;
             _stateDirty = true;
         }
 
         if (appRunning)
         {
             usage.CurrentIntervalSecondsUsed++;
-            if (!usage.IsBlockedInCurrentInterval &&
-                usage.CurrentIntervalSecondsUsed >= limit.LimitMinutes * 60)
+            int limitSec = limit.LimitMinutes * 60;
+            if (!usage.IsBlockedInCurrentInterval)
             {
-                usage.IsBlockedInCurrentInterval = true;
-                _stateDirty = true;
-                _appBlocker.ApplyScreenTimeBlock(limit.ExeName, _getSession());
-                _log.LogInformation("App {Exe} interval limit reached ({Min} min per {Int} min).",
-                    limit.ExeName, limit.LimitMinutes, limit.IntervalMinutes);
-                try
+                int remaining = limitSec - usage.CurrentIntervalSecondsUsed;
+                bool warned5 = usage.Warned5Min;
+                bool warned1 = usage.Warned1Min;
+                MaybeNotifyRemaining(
+                    "Focus Lock — App Time Limit",
+                    $"{limit.DisplayName} this interval",
+                    remaining,
+                    limitSec,
+                    ref warned5,
+                    ref warned1);
+                usage.Warned5Min = warned5;
+                usage.Warned1Min = warned1;
+
+                if (usage.CurrentIntervalSecondsUsed >= limitSec)
                 {
-                    new SessionNotifier(_log).ShowMessage(
-                        "Focus Lock — App Time Limit",
-                        $"{limit.DisplayName} has reached its {limit.LimitMinutes}-minute limit for this {limit.IntervalMinutes}-minute period and will be closed.");
+                    usage.IsBlockedInCurrentInterval = true;
+                    _stateDirty = true;
+                    _appBlocker.ApplyScreenTimeBlock(limit.ExeName, _getSession());
+                    _log.LogInformation("App {Exe} interval limit reached ({Min} min per {Int} min).",
+                        limit.ExeName, limit.LimitMinutes, limit.IntervalMinutes);
+                    try
+                    {
+                        _notifier.ShowMessage(
+                            "Focus Lock — App Time Limit",
+                            $"{limit.DisplayName} has reached its {limit.LimitMinutes}-minute limit for this {limit.IntervalMinutes}-minute period and will be closed.");
+                    }
+                    catch (Exception ex) { _log.LogDebug(ex, "Failed to show app limit notification."); }
                 }
-                catch (Exception ex) { _log.LogDebug(ex, "Failed to show app limit notification."); }
             }
         }
 
@@ -484,6 +560,38 @@ public sealed class ScreenTimeManager
 
     private static ScreenTimeSchedule GetAppSchedule(AppTimeLimit limit)
         => limit.Schedule ?? ScreenTimeSchedule.Always;
+
+    private ScreenTimeSchedule GetEffectiveDailySchedule()
+        => _config.DailySchedule ?? ScreenTimeSchedule.Always;
+
+    private void MaybeNotifyRemaining(
+        string title,
+        string contextLabel,
+        int remainingSec,
+        int limitSec,
+        ref bool warned5,
+        ref bool warned1)
+    {
+        if (limitSec < 300)
+            warned5 = true;
+
+        try
+        {
+            if (!warned5 && remainingSec <= 300 && remainingSec > 60)
+            {
+                _notifier.ShowMessage(title, $"About 5 minutes remaining for {contextLabel}.");
+                warned5 = true;
+                _stateDirty = true;
+            }
+            else if (!warned1 && remainingSec <= 60 && remainingSec > 0)
+            {
+                _notifier.ShowMessage(title, $"About 1 minute remaining for {contextLabel}.");
+                warned1 = true;
+                _stateDirty = true;
+            }
+        }
+        catch (Exception ex) { _log.LogDebug(ex, "Failed to show remaining-time notification."); }
+    }
 
     private static bool IsAppInUse(string exeName, HashSet<string> running, string? foregroundExe)
     {

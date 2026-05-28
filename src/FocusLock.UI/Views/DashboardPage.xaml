@@ -108,6 +108,26 @@
                                                    FontSize="13" Margin="6,0,0,0"/>
                                     </StackPanel>
                                 </Grid>
+                                <StackPanel Margin="0,0,0,6"
+                                            Visibility="{Binding DailyHasCustomSchedule, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Foreground="#A6ADC8" FontSize="12" Margin="0,0,0,6">
+                                        <Run Text="Schedule: "/>
+                                        <Run Text="{Binding DailyScheduleLabel, Mode=OneWay}"/>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding DailyScheduleStatusText}"
+                                               FontSize="12" TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#A6E3A1"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding DailyScheduleActiveNow}" Value="False">
+                                                        <Setter Property="Foreground" Value="#FAB387"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
                                 <ProgressBar Value="{Binding DailyProgress}" Maximum="1"
                                              Style="{StaticResource UsageProgressBar}"/>
                                 <TextBlock Text="{Binding DailyRemainingText}" Foreground="#A6ADC8"

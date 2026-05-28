@@ -37,6 +37,11 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private string _dailyRemainingText = string.Empty;
     [ObservableProperty] private double _dailyProgress;
     [ObservableProperty] private bool _isDailyLockedOut;
+    [ObservableProperty] private string _dailyScheduleLabel = string.Empty;
+    [ObservableProperty] private bool _dailyHasCustomSchedule;
+    [ObservableProperty] private bool _dailyScheduleActiveNow = true;
+    [ObservableProperty] private bool _dailyScheduleWindowEndedForToday;
+    [ObservableProperty] private string _dailyScheduleStatusText = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasScreenTime))]
@@ -214,9 +219,30 @@ public partial class DashboardViewModel : ObservableObject
             DailyProgress      = limitSec > 0
                 ? Math.Min(1.0, status.TotalSecondsUsedToday / (double)limitSec)
                 : 0;
-            DailyRemainingText = status.IsLockedOutForDay
-                ? "Limit reached"
-                : FormatRemaining(limitSec - status.TotalSecondsUsedToday);
+
+            DailyHasCustomSchedule            = status.DailyHasCustomSchedule;
+            DailyScheduleLabel                = status.DailyScheduleLabel ?? string.Empty;
+            DailyScheduleActiveNow            = status.DailyScheduleActiveNow;
+            DailyScheduleWindowEndedForToday  = status.DailyScheduleWindowEndedForToday;
+
+            if (status.DailyScheduleActiveNow)
+            {
+                DailyRemainingText = status.IsLockedOutForDay
+                    ? "Limit reached"
+                    : FormatRemaining(limitSec - status.TotalSecondsUsedToday);
+                DailyScheduleStatusText = DailyHasCustomSchedule
+                    ? "Daily limit tracking active now"
+                    : string.Empty;
+            }
+            else
+            {
+                DailyRemainingText = status.DailyScheduleWindowEndedForToday
+                    ? "Not in effect — today's window ended"
+                    : FormatDailyRemainingPaused(status.DailyScheduleResumesAtLocal);
+                DailyScheduleStatusText = status.DailyScheduleWindowEndedForToday
+                    ? "Daily limit not in effect — today's window has ended"
+                    : FormatDailyScheduleInactive(status.DailyScheduleResumesAtLocal);
+            }
         }
         else
         {
@@ -224,6 +250,10 @@ public partial class DashboardViewModel : ObservableObject
             DailyLimitLabel    = string.Empty;
             DailyRemainingText = string.Empty;
             DailyProgress      = 0;
+            DailyHasCustomSchedule           = false;
+            DailyScheduleLabel               = string.Empty;
+            DailyScheduleStatusText          = string.Empty;
+            DailyScheduleWindowEndedForToday = false;
         }
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -276,6 +306,10 @@ public partial class DashboardViewModel : ObservableObject
         DailyLimitLabel      = string.Empty;
         DailyRemainingText   = string.Empty;
         DailyProgress        = 0;
+        DailyScheduleLabel               = string.Empty;
+        DailyScheduleStatusText          = string.Empty;
+        DailyHasCustomSchedule           = false;
+        DailyScheduleWindowEndedForToday = false;
         AppUsages.Clear();
         _appUsageByExe.Clear();
         OnPropertyChanged(nameof(HasScreenTime));
@@ -412,6 +446,28 @@ public partial class DashboardViewModel : ObservableObject
         if (t.TotalMinutes >= 1)
             return $"{(int)t.TotalMinutes}m";
         return $"{t.Seconds}s";
+    }
+
+    private static string FormatDailyRemainingPaused(DateTime? resumesAtLocal)
+    {
+        if (resumesAtLocal is not { } at)
+            return "Outside schedule";
+
+        if (at.Date == DateTime.Today)
+            return $"Not active — resumes {at:h:mm tt}";
+
+        return $"Not active — resumes {at:ddd h:mm tt}";
+    }
+
+    private static string FormatDailyScheduleInactive(DateTime? resumesAtLocal)
+    {
+        if (resumesAtLocal is not { } at)
+            return "Daily limit not active — outside scheduled hours";
+
+        if (at.Date == DateTime.Today)
+            return $"Daily limit not active — resumes at {at:h:mm tt}";
+
+        return $"Daily limit not active — resumes {at:ddd} at {at:h:mm tt}";
     }
 
     private static string FormatRemaining(int secondsRemaining)

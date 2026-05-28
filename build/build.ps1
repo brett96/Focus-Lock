@@ -56,20 +56,20 @@ $signTool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" `
 $signingCert = $null
 if ($null -ne $signTool) {
     $signingCert = Get-ChildItem "Cert:\CurrentUser\My" -CodeSigningCert |
-        Where-Object { $_.Subject -match "Brett Tomita" -and $_.NotAfter -gt (Get-Date) } |
+        Where-Object { $_.Subject -match "Focus Lock" -and $_.NotAfter -gt (Get-Date) } |
         Select-Object -First 1
 
     if ($null -eq $signingCert) {
-        Write-Host "    Creating self-signed code signing certificate for 'Brett Tomita'..." -ForegroundColor Yellow
+        Write-Host "    Creating self-signed code signing certificate for 'Focus Lock'..." -ForegroundColor Yellow
         $signingCert = New-SelfSignedCertificate `
             -Type CodeSigningCert `
-            -Subject "CN=Brett Tomita" `
+            -Subject "CN=Focus Lock" `
             -HashAlgorithm SHA256 `
             -CertStoreLocation "Cert:\CurrentUser\My" `
             -NotAfter (Get-Date).AddYears(10)
     }
 
-    # Trust the cert so UAC shows "Brett Tomita" instead of "Unknown"
+    # Trust the cert so UAC shows "Focus Lock" instead of "Unknown"
     foreach ($storeName in @("Root", "TrustedPublisher")) {
         $store = New-Object System.Security.Cryptography.X509Certificates.X509Store($storeName, "LocalMachine")
         try {

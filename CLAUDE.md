@@ -124,6 +124,12 @@ Pages: `DashboardPage` (primary idle/active UI), `SetupPage` (wizard), `ActiveSe
 
 **Service reachability UI**: `ServiceClient.SendAsync` retries (`IpcRetryAttempts` / `IpcRetryDelayMs`). Dashboard requires **3** consecutive failed session polls before `IsServiceUnreachable`; a successful `GetStatus` or `GetScreenTimeStatus` clears the streak. Pipe `MaxConnections` = 16 for UI + BlockerStub bursts.
 
+**Named pipe security** (`PipeSecurityHelper`): ACL allows `LocalSystem`, `BuiltinAdministrators`, and `AuthenticatedUser` (for `BlockerStub` / `IsBlocked` as standard user). **No `WorldSid`.** Privileged message types (`StartSession`, `EndSession`, `SetScreenTimeConfig`, `ForceReset`) require an admin token on the client connection (`ImpersonateNamedPipeClient`). IPC reads use a **3s** timeout (`PipeConstants.IpcReadTimeoutSeconds`) to prevent connection-slot exhaustion.
+
+**Screen time dashboard**: `GetScreenTimeStatus` includes schedule phase fields (`DailyScheduleActiveNow`, `DailyScheduleWindowEndedForToday`, `DailyScheduleResumesAtLocal`). Daily limit enforcement (accumulation, lockout, disconnect) only runs inside the configured window; when the window ends, lockout is cleared and the UI shows that limits are no longer in effect.
+
+**Screen time warnings**: Service toasts at **5** and **1** minutes remaining for daily total and per-app limits (`MaybeNotifyRemaining`; skip 5‑min warning if limit &lt; 5 minutes).
+
 **Notifications**: `SessionNotifier` spawns `BlockerStub` in the user session (`CreateProcessAsUser`) and waits up to 2.5s for toast delivery. `BlockPageServer` calls `ShowWebsiteBlocked` on HTTP hits (port 80). Website toasts require HTTP; app toasts use IFEO stub on each launch.
 
 `TrayManager` (`Services/TrayManager.cs`) wraps `System.Windows.Forms.NotifyIcon` — the UI project enables `<UseWindowsForms>true</UseWindowsForms>` for this. The window hides to tray on minimize and on close; Exit is only available from the tray context menu. Use `using Application = System.Windows.Application;` in any file that uses `Application` directly to resolve the WPF/WinForms ambiguity.

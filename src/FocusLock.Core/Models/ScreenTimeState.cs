@@ -5,6 +5,8 @@ public class ScreenTimeState
     public DateOnly Date { get; set; } = DateOnly.FromDateTime(DateTime.Now);
     public int TotalSecondsUsed { get; set; }
     public bool IsLockedOutForDay { get; set; }
+    public bool DailyWarned5Min { get; set; }
+    public bool DailyWarned1Min { get; set; }
     public Dictionary<string, AppUsageEntry> AppUsage { get; set; } = new();
 }
 
@@ -20,4 +22,6 @@ public class AppUsageEntry
     public long CurrentIntervalIndex { get; set; } = -1;
     public int CurrentIntervalSecondsUsed { get; set; }
     public bool IsBlockedInCurrentInterval { get; set; }
+    public bool Warned5Min { get; set; }
+    public bool Warned1Min { get; set; }
 }

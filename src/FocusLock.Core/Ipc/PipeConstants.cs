@@ -9,6 +9,7 @@ public static class PipeConstants
     public const int ConnectTimeoutMs = 5000;
     public const int IpcRetryAttempts = 3;
     public const int IpcRetryDelayMs = 150;
+    public const int IpcReadTimeoutSeconds = 3;
 
     // Message type strings
     public const string GetStatus = "GetStatus";

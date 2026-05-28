@@ -50,7 +50,12 @@ public record ScreenTimeStatusResponse(
     int DailyLimitMinutes,
     int TotalSecondsUsedToday,
     bool IsLockedOutForDay,
-    List<AppUsageStatus> AppStatuses);
+    List<AppUsageStatus> AppStatuses,
+    bool DailyHasCustomSchedule = false,
+    bool DailyScheduleActiveNow = true,
+    bool DailyScheduleWindowEndedForToday = false,
+    string? DailyScheduleLabel = null,
+    DateTime? DailyScheduleResumesAtLocal = null);
 
 public record AppUsageStatus(
     string ExeName,

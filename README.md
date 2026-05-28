@@ -32,6 +32,8 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
   - **Website categories** — block preset groups of sites (Adult, Entertainment, Social, etc.) from the session setup screen.
   - Configuration persists in `C:\ProgramData\FocusLock\screen-time-config.json`. Usage counters are session-scoped (reset when a session starts and cleared when it ends).
   - During an active session, the **dashboard** shows live countdowns for the session deadline, screen-time usage, remaining quota per limit, interval-reset times for interval-based app limits, and scrollable lists of blocked apps/sites.
+  - When the daily limit uses a **schedule window**, the dashboard shows that window and whether tracking is active now; outside the window, the remaining-time line shows when tracking resumes.
+  - **Warning toasts** at 5 and 1 minutes remaining for the daily total and per-app limits (5‑minute warning skipped if the limit is under 5 minutes).
   - When a screen-time-limited app is blocked, or a site is blocked over HTTP, the user gets a **native notification** (via `BlockerStub` and `IsBlockedResponse.BlockMessage`).
 - **Session setup (New Focus Session wizard)**
   - Default end time is **one hour from now** (editable with date picker + `TimePartSpinBox` hour/minute spinners).
@@ -52,7 +54,7 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
 - **Language/runtime**: C# on **.NET 9** (`net9.0-windows`)
 - **UI**: **WPF** (MVVM via `CommunityToolkit.Mvvm`), plus a tray icon implemented with `System.Windows.Forms.NotifyIcon`
 - **Service**: **Windows Service** built on `Microsoft.Extensions.Hosting` (`Microsoft.NET.Sdk.Worker`)
-- **IPC**: **Named Pipes** (`\\.\pipe\FocusLockService`) with a length-prefixed JSON protocol
+- **IPC**: **Named Pipes** (`\\.\pipe\FocusLockService`) with a length-prefixed JSON protocol. The pipe ACL does **not** grant Everyone access; privileged commands require an administrator token. Client reads time out after 3 seconds to avoid connection exhaustion.
 - **Installer**: **WiX Toolset v5** via `WixToolset.Sdk` (MSI output)
 - **Tests**: xUnit test projects under `tests/`
 
