@@ -1,0 +1,63 @@
+# Focus Lock (.NET / Visual Studio / WiX)
+
+## Build outputs
+**/bin/
+**/obj/
+artifacts/
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+## Publish / packaging outputs
+publish/
+*.msi
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+
+## WiX / installer artifacts
+*.wixobj
+*.wixpdb
+*.cab
+*.bundle
+*.ba
+installer/**/bin/
+installer/**/obj/
+
+## Visual Studio / MSBuild user files
+.vs/
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+*.cache
+*.tlog
+
+## NuGet
+**/packages/
+*.nupkg
+*.snupkg
+*.nuget.props
+*.nuget.targets
+project.lock.json
+
+## Rider / JetBrains
+.idea/
+*.sln.iml
+
+## VS Code / Cursor local state
+.vscode/
+.cursor/
+
+## OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+## Logs
+*.log
+

@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Focus Lock Windows Installer
+  UpgradeCode: A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A1B  (permanent — never change)
+
+  Pre-requisite: run build/build.ps1 before dotnet build on this project.
+  That script publishes all three executables to publish/FocusLock/ and
+  isolates FocusLock.Service.exe into publish/service-exe/ so it can be
+  wired up with ServiceInstall/ServiceControl without conflicting with the
+  AppFiles ComponentGroup glob below.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="Focus Lock"
+           Version="1.0.0.0"
+           Manufacturer="Focus Lock"
+           UpgradeCode="A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A1B"
+           Scope="perMachine">
+
+    <SummaryInformation Description="Focus Lock — Self parental control for Windows" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Automatically remove older versions on upgrade. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Focus Lock is already installed. Please uninstall it first." />
+
+    <!-- ── .NET 9 Desktop Runtime prerequisite ──────────────────────────────── -->
+    <!--
+      DirectorySearch detects any installed patch of WindowsDesktop.App (9.0.x, 9.0.y, …).
+      RegistrySearch with Name="9.0.0" would only match the exact patch 9.0.0, not 9.0.5 etc.
+    -->
+    <Property Id="DOTNET9DESKTOPRUNTIME">
+      <DirectorySearch Id="SearchDotNet9Desktop"
+                       Path="[ProgramFiles64Folder]dotnet\shared\Microsoft.WindowsDesktop.App"
+                       Depth="0" />
+    </Property>
+    <!--
+      <Launch> is the WiX v5 equivalent of <Condition> inside <Product>.
+      Shows a dialog and aborts if .NET Desktop Runtime is not installed at all.
+    -->
+    <Launch Condition="Installed OR DOTNET9DESKTOPRUNTIME"
+            Message="Focus Lock requires the .NET 9.0 Desktop Runtime.&#13;&#10;Please install it from https://dotnet.microsoft.com and run this installer again." />
+
+    <!-- ── All publish output EXCEPT FocusLock.Service.exe ──────────────────── -->
+    <!--
+      WiX v5: <Files> inside <ComponentGroup> uses glob patterns.
+      The service exe is NOT in publish\FocusLock\ (moved by build.ps1 to
+      publish\service-exe\) so there is no duplicate-file conflict with the
+      ServiceExeComponent below.
+    -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="..\..\publish\FocusLock\**\*" />
+    </ComponentGroup>
+
+    <!-- ── C:\Program Files\FocusLock\ ─────────────────────────────────────── -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="FocusLock">
+
+        <!-- Service executable with service registration. -->
+        <Component Id="ServiceExeComponent" Guid="*">
+          <File Id="ServiceExe" Name="FocusLock.Service.exe"
+                Source="..\..\publish\service-exe\FocusLock.Service.exe" KeyPath="yes" />
+
+          <ServiceInstall Id="FocusLockServiceInstall"
+                         Name="FocusLockService"
+                         DisplayName="Focus Lock Service"
+                         Description="Manages Focus Lock sessions and enforces app and website blocking."
+                         Type="ownProcess"
+                         Start="auto"
+                         ErrorControl="normal"
+                         Account="LocalSystem"
+                         Interactive="no" />
+
+          <ServiceControl Id="FocusLockServiceControl"
+                         Name="FocusLockService"
+                         Start="install"
+                         Stop="both"
+                         Remove="uninstall"
+                         Wait="yes" />
+
+          <!--
+            util:ServiceConfig configures failure/restart actions.
+            The native WiX ServiceConfig does NOT support failure action attributes;
+            use WixToolset.Util.wixext for this.
+          -->
+          <util:ServiceConfig
+            ServiceName="FocusLockService"
+            FirstFailureActionType="restart"
+            SecondFailureActionType="restart"
+            ThirdFailureActionType="restart"
+            RestartServiceDelayInSeconds="30"
+            ResetPeriodInDays="1" />
+        </Component>
+
+        <!-- Allow the service to start in Windows Safe Mode (Minimal). -->
+        <Component Id="SafeBootRegistry" Guid="*">
+          <RegistryKey Root="HKLM"
+                      Key="SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\FocusLockService">
+            <RegistryValue Type="string" Value="Service" KeyPath="yes" />
+          </RegistryKey>
+        </Component>
+
+        <!-- Windows Event Log source so the service can write structured logs. -->
+        <Component Id="EventLogSource" Guid="*">
+          <RegistryKey Root="HKLM"
+                      Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\FocusLock">
+            <RegistryValue Type="string" Name="EventMessageFile"
+                          Value="[INSTALLFOLDER]FocusLock.Service.exe" KeyPath="yes" />
+            <RegistryValue Type="integer" Name="TypesSupported" Value="7" />
+          </RegistryKey>
+        </Component>
+
+      </Directory>
+    </StandardDirectory>
+
+    <!-- ── C:\ProgramData\FocusLock\ ───────────────────────────────────────── -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="FocusLockDataDir" Name="FocusLock">
+        <Component Id="DataDirectory" Guid="*">
+          <CreateFolder />
+          <RegistryValue Root="HKCU" Key="Software\FocusLock\Install"
+                        Name="DataDir" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- ── Start Menu shortcut ──────────────────────────────────────────────── -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="FocusLockMenuDir" Name="Focus Lock">
+        <Component Id="StartMenuShortcut" Guid="*">
+          <Shortcut Id="AppShortcut" Name="Focus Lock"
+                    Description="Stay focused. Get it done."
+                    Target="[INSTALLFOLDER]FocusLock.UI.exe"
+                    WorkingDirectory="INSTALLFOLDER" />
+          <RemoveFolder Id="RemoveFocusLockMenuDir" Directory="FocusLockMenuDir" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\FocusLock\Install"
+                        Name="Shortcut" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- ── Feature tree ─────────────────────────────────────────────────────── -->
+    <Feature Id="ProductFeature" Title="Focus Lock" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="ServiceExeComponent" />
+      <ComponentRef Id="SafeBootRegistry" />
+      <ComponentRef Id="EventLogSource" />
+      <ComponentRef Id="DataDirectory" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+
+  </Package>
+</Wix>

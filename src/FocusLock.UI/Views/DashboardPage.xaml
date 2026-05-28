@@ -1,0 +1,90 @@
+<Page x:Class="FocusLock.UI.Views.DashboardPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      mc:Ignorable="d"
+      Background="#1E1E2E"
+      d:DesignHeight="600" d:DesignWidth="900">
+
+    <Grid Margin="40">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,30">
+            <StackPanel HorizontalAlignment="Center">
+                <TextBlock Text="Focus Lock" FontSize="32" FontWeight="Bold"
+                           Foreground="#CDD6F4" HorizontalAlignment="Center"/>
+                <TextBlock Text="Stay focused. Get it done." FontSize="14"
+                           Foreground="#6C7086" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+            </StackPanel>
+            <Button Content="⚙" Command="{Binding OpenSettingsCommand}"
+                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Background="Transparent" Foreground="#6C7086" FontSize="20"
+                    BorderThickness="0" Cursor="Hand" Padding="4"
+                    ToolTip="Settings"/>
+        </Grid>
+
+        <!-- Status area -->
+        <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+
+            <!-- Idle state -->
+            <StackPanel x:Name="IdlePanel"
+                        Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="No Active Session" FontSize="22" Foreground="#A6ADC8"
+                           HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                <TextBlock Text="Start a session to block distracting apps and websites."
+                           FontSize="13" Foreground="#6C7086" HorizontalAlignment="Center"
+                           TextWrapping="Wrap" TextAlignment="Center" MaxWidth="350"/>
+            </StackPanel>
+
+            <!-- Active state -->
+            <StackPanel Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="Session Active" FontSize="18" Foreground="#A6E3A1"
+                           HorizontalAlignment="Center" Margin="0,0,0,6"/>
+                <TextBlock Text="{Binding TimeRemaining}" FontSize="56" FontWeight="Bold"
+                           Foreground="#CDD6F4" HorizontalAlignment="Center"
+                           FontFamily="Consolas"/>
+                <TextBlock Text="{Binding DeadlineText, StringFormat='Ends {0}'}"
+                           FontSize="13" Foreground="#6C7086" HorizontalAlignment="Center"
+                           Margin="0,8,0,0"/>
+
+                <!-- Mode badge -->
+                <Border Background="{Binding ModeColor}" CornerRadius="12"
+                        HorizontalAlignment="Center" Padding="12,4" Margin="0,16,0,0">
+                    <TextBlock Text="{Binding ModeLabel}" Foreground="White" FontSize="12" FontWeight="SemiBold"/>
+                </Border>
+
+                <!-- Strict lock message -->
+                <TextBlock Text="Strict mode — cannot end early"
+                           Foreground="#F38BA8" FontSize="13" HorizontalAlignment="Center"
+                           Margin="0,16,0,0"
+                           Visibility="{Binding IsStrictMode, Converter={StaticResource BoolToVisibility}}"/>
+            </StackPanel>
+
+            <!-- Service unreachable warning -->
+            <Border Background="#45475A" CornerRadius="8" Padding="16,10" Margin="0,20,0,0"
+                    Visibility="{Binding IsServiceUnreachable, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="⚠ Cannot reach Focus Lock Service. Make sure it is installed and running."
+                           Foreground="#FAB387" TextWrapping="Wrap" TextAlignment="Center"/>
+            </Border>
+        </StackPanel>
+
+        <!-- Action buttons -->
+        <StackPanel Grid.Row="2" HorizontalAlignment="Center" Orientation="Horizontal">
+            <Button Content="New Focus Session"
+                    Command="{Binding StartNewCommand}"
+                    Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}}"
+                    Style="{StaticResource PrimaryButton}"/>
+
+            <Button Content="End Session Early"
+                    Command="{Binding EndSessionCommand}"
+                    Visibility="{Binding CanEndEarly, Converter={StaticResource BoolToVisibility}}"
+                    Style="{StaticResource DangerButton}"/>
+        </StackPanel>
+    </Grid>
+</Page>

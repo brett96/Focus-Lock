@@ -1,0 +1,25 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <OutputName>FocusLockSetup</OutputName>
+    <!-- Keep UpgradeCode stable across all versions. Never change this GUID. -->
+    <UpgradeCode>A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A1B</UpgradeCode>
+    <Version>1.0.0</Version>
+    <Manufacturer>Focus Lock</Manufacturer>
+    <InstallerPlatform>x64</InstallerPlatform>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Util extension provides util:ServiceConfig (failure actions) -->
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+  <!--
+    Before building this project, run build/build.ps1 to:
+      1. Publish UI, BlockerStub, and Service to publish\FocusLock\
+      2. Move FocusLock.Service.exe to publish\service-exe\
+    The service exe is isolated so it can be wired with ServiceInstall/ServiceControl
+    in Package.wxs without conflicting with the ComponentGroup glob.
+  -->
+
+</Project>

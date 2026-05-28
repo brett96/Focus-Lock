@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Force)",
+      "Bash(git *)",
+      "Bash(reg query *)",
+      "Bash(sc query *)",
+      "Bash(dotnet --version)",
+      "Bash(dotnet --list-sdks)",
+      "Bash(dotnet new *)",
+      "Bash(dotnet sln *)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet test *)",
+      "PowerShell(New-Item *)",
+      "Bash(Select-String -Pattern \"error|warning|succeeded|failed\")",
+      "Bash(.\\\\build\\\\build.ps1)"
+    ]
+  }
+}
