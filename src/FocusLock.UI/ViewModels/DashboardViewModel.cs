@@ -22,8 +22,14 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private bool _isServiceReachable = true;
     [ObservableProperty] private bool _isStrictMode;
 
-    public bool IsIdle => SessionStatus == SessionStatus.Idle;
-    public bool IsActive => SessionStatus == SessionStatus.Active;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsIdle))]
+    [NotifyPropertyChangedFor(nameof(IsActive))]
+    [NotifyPropertyChangedFor(nameof(CanEndEarly))]
+    private bool _isLoading = true;
+
+    public bool IsIdle => !IsLoading && SessionStatus == SessionStatus.Idle;
+    public bool IsActive => !IsLoading && SessionStatus == SessionStatus.Active;
     public bool CanEndEarly => IsActive && !IsStrictMode;
     public bool IsServiceUnreachable => !IsServiceReachable;
     public string ModeLabel => SessionMode == SessionMode.Strict ? "STRICT MODE" : "REGULAR MODE";
@@ -53,6 +59,7 @@ public partial class DashboardViewModel : ObservableObject
     private async Task RefreshCoreAsync()
     {
         var info = await _client.GetSessionInfoAsync();
+        IsLoading = false;
         if (info is null)
         {
             IsServiceReachable = false;

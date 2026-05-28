@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using FocusLock.Core.Models;
 
@@ -78,6 +80,62 @@ public class WebsiteBlocker(ILogger log)
         finally
         {
             HostsMutex.ReleaseMutex();
+        }
+    }
+
+    /// <summary>
+    /// Adds a deny-write ACL for Administrators on the hosts file.
+    /// SYSTEM retains full control so the service can still write to it.
+    /// Call after Apply() when starting a Strict session.
+    /// </summary>
+    public void LockHostsAcl(FocusSession session)
+    {
+        try
+        {
+            var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            const FileSystemRights denyMask = FileSystemRights.Write | FileSystemRights.Delete
+                                            | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership;
+
+            var fi = new FileInfo(HostsFile);
+            var sec = fi.GetAccessControl();
+            sec.AddAccessRule(new FileSystemAccessRule(
+                admins, denyMask,
+                InheritanceFlags.None, PropagationFlags.None,
+                AccessControlType.Deny));
+            fi.SetAccessControl(sec);
+            log.LogInformation("Hosts file write access locked for administrators.");
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "Failed to lock hosts file ACL.");
+        }
+    }
+
+    /// <summary>
+    /// Removes all deny-write ACL entries added by LockHostsAcl.
+    /// Call before Remove() when ending a Strict session.
+    /// </summary>
+    public void UnlockHostsAcl(FocusSession session)
+    {
+        try
+        {
+            var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            var fi = new FileInfo(HostsFile);
+            var sec = fi.GetAccessControl();
+            var toRemove = sec
+                .GetAccessRules(true, false, typeof(SecurityIdentifier))
+                .Cast<FileSystemAccessRule>()
+                .Where(r => r.AccessControlType == AccessControlType.Deny
+                         && r.IdentityReference.Equals(admins))
+                .ToList();
+            foreach (var rule in toRemove)
+                sec.RemoveAccessRule(rule);
+            fi.SetAccessControl(sec);
+            log.LogInformation("Hosts file ACL restored.");
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "Failed to restore hosts file ACL.");
         }
     }
 

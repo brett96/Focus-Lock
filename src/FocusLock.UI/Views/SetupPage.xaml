@@ -78,7 +78,8 @@
                     <TextBlock Text="⚠ Strict Mode Warning" FontWeight="Bold" Foreground="#F38BA8"
                                FontSize="14" Margin="0,0,0,8"/>
                     <TextBlock TextWrapping="Wrap" Foreground="#A6ADC8" FontSize="13">
-                        Strict mode will create a hidden admin account and temporarily remove your admin rights.
+                        Strict mode prevents the Focus Lock service from being stopped for the duration of the session.
+                        Blocked apps and the hosts file will be locked at the system level.
                         You will NOT be able to end the session early. No exceptions.
                     </TextBlock>
                     <CheckBox Content="I understand — I cannot unlock this session early."

@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using FocusLock.Core.Blocking;
 using FocusLock.Core.Models;
 using Microsoft.Win32;
@@ -73,6 +75,79 @@ public class AppBlocker(ILogger log)
             catch (Exception ex)
             {
                 log.LogError(ex, "Failed to verify IFEO for {Exe}.", app.ExeName);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Adds a deny-write ACL for Administrators on each IFEO key written for this session.
+    /// SYSTEM (LocalSystem) is unaffected so the service can still repair keys if needed.
+    /// Call after Apply() when starting a Strict session.
+    /// </summary>
+    public void LockIfeoAcls(FocusSession session)
+    {
+        var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+        const RegistryRights denyMask = RegistryRights.SetValue | RegistryRights.Delete
+                                      | RegistryRights.ChangePermissions;
+        foreach (var app in session.BlockedApps)
+        {
+            if (IsSystemExe(app.ExeName)) continue;
+            try
+            {
+                using var key = Registry.LocalMachine.OpenSubKey(
+                    $@"{IfeoBase}\{app.ExeName}",
+                    RegistryKeyPermissionCheck.ReadWriteSubTree,
+                    RegistryRights.ChangePermissions | RegistryRights.ReadPermissions);
+                if (key is null) continue;
+
+                var sec = key.GetAccessControl();
+                sec.AddAccessRule(new RegistryAccessRule(
+                    admins, denyMask,
+                    InheritanceFlags.None, PropagationFlags.None,
+                    AccessControlType.Deny));
+                key.SetAccessControl(sec);
+                log.LogDebug("IFEO ACL locked for {Exe}.", app.ExeName);
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Failed to lock IFEO ACL for {Exe}.", app.ExeName);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Removes all deny-write ACL entries added by LockIfeoAcls.
+    /// Call before Remove() when ending a Strict session.
+    /// </summary>
+    public void UnlockIfeoAcls(FocusSession session)
+    {
+        var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+        foreach (var app in session.BlockedApps)
+        {
+            if (IsSystemExe(app.ExeName)) continue;
+            try
+            {
+                using var key = Registry.LocalMachine.OpenSubKey(
+                    $@"{IfeoBase}\{app.ExeName}",
+                    RegistryKeyPermissionCheck.ReadWriteSubTree,
+                    RegistryRights.ChangePermissions | RegistryRights.ReadPermissions);
+                if (key is null) continue;
+
+                var sec = key.GetAccessControl();
+                var toRemove = sec
+                    .GetAccessRules(true, false, typeof(SecurityIdentifier))
+                    .Cast<RegistryAccessRule>()
+                    .Where(r => r.AccessControlType == AccessControlType.Deny
+                             && r.IdentityReference.Equals(admins))
+                    .ToList();
+                foreach (var rule in toRemove)
+                    sec.RemoveAccessRule(rule);
+                key.SetAccessControl(sec);
+                log.LogDebug("IFEO ACL unlocked for {Exe}.", app.ExeName);
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Failed to unlock IFEO ACL for {Exe}.", app.ExeName);
             }
         }
     }

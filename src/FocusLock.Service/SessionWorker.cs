@@ -72,6 +72,15 @@ public class SessionWorker : BackgroundService
         _session = saved;
         _appBlocker.Apply(_session);
         _websiteBlocker.Apply(_session);
+
+        if (_session.Mode == SessionMode.Strict)
+        {
+            // Re-apply all strict protections. These are idempotent — re-adding a deny
+            // ACE that already exists is harmless, and UnlockIfeoAcls removes all of them.
+            _strictMode.Activate(_session);
+            _appBlocker.LockIfeoAcls(_session);
+            _websiteBlocker.LockHostsAcl(_session);
+        }
     }
 
     // ── Named Pipe server ─────────────────────────────────────────────────────
@@ -205,6 +214,13 @@ public class SessionWorker : BackgroundService
 
             _appBlocker.Apply(session);
             _websiteBlocker.Apply(session);
+
+            if (req.Mode == SessionMode.Strict)
+            {
+                _appBlocker.LockIfeoAcls(session);
+                _websiteBlocker.LockHostsAcl(session);
+            }
+
             SessionRepository.Save(session);
             _session = session;
 
@@ -248,6 +264,15 @@ public class SessionWorker : BackgroundService
     private void EndSession(FocusSession session)
     {
         _log.LogInformation("Ending session {Id}.", session.Id);
+
+        // For strict sessions: unlock ACLs before modifying the protected resources,
+        // then restore the service DACL last so the service can be managed normally again.
+        if (session.Mode == SessionMode.Strict)
+        {
+            _websiteBlocker.UnlockHostsAcl(session);
+            _appBlocker.UnlockIfeoAcls(session);
+        }
+
         _appBlocker.Remove(session);
         _websiteBlocker.Remove(session);
 

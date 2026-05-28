@@ -12,7 +12,11 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
 - **Session enforcement**
   - Sessions are persisted to `C:\ProgramData\FocusLock\session.json` so the service can **recover after restart/crash** and keep enforcing until the deadline.
 - **Strict mode**
-  - Creates a hidden local admin account (`FocusLockAdmin`) and demotes other admins to standard users so the session **cannot be ended early**. On deadline, the service restores accounts and deletes the strict-mode admin.
+  - Locks the session so it **cannot be ended early**. Three layers of enforcement are applied at session start and removed automatically on deadline:
+    1. **Service DACL** — the service modifies its own Windows security descriptor to deny `SERVICE_STOP` and `SERVICE_PAUSE_CONTINUE` to `BUILTIN\Administrators`. `NT AUTHORITY\SYSTEM` (LocalSystem) is a distinct SID and is unaffected, so the service still stops cleanly on system shutdown and restarts normally.
+    2. **IFEO registry ACLs** — each Image File Execution Options key written for the session gets a deny-write ACL for `Administrators`, preventing manual deletion or modification. The service (running as LocalSystem) can still repair keys via the monitor loop.
+    3. **Hosts file ACL** — the hosts file gets a deny-write ACL for `Administrators`, preventing the sentinel block from being manually removed. The service retains full control so it can restore the file on session end.
+  - The user keeps their admin rights for all other purposes — no risk of being locked out of their own machine.
 
 ## Tech stack
 
@@ -70,10 +74,11 @@ When Windows launches a blocked app, IFEO redirects it to `FocusLock.BlockerStub
 
 ### Prerequisites
 
-- Windows machine
-- .NET SDK installed (projects target **.NET 9**)
+- Windows 10 or 11
+- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9) (for building)
+- [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9) (for running — the SDK includes this)
 
-### Build everything (source)
+### Build everything (source only, no installer)
 
 ```powershell
 dotnet build FocusLock.sln
@@ -83,15 +88,21 @@ dotnet build FocusLock.sln
 
 ```powershell
 dotnet test
+
+# Single test by name:
+dotnet test --filter "FullyQualifiedName~MyTestName"
 ```
 
-### Full release build (publishes + MSI)
-
-This publishes the apps to `publish/` and then builds the WiX installer.
+### Full release build — publishes all apps + produces the MSI
 
 ```powershell
 .\build\build.ps1
 ```
+
+`build.ps1` does three things in order:
+1. Publishes `FocusLock.UI`, `FocusLock.BlockerStub`, and `FocusLock.Service` to `publish\FocusLock\`
+2. Moves `FocusLock.Service.exe` to `publish\service-exe\` (required so WiX can attach `ServiceInstall` without a glob conflict)
+3. Builds the WiX installer → `installer\FocusLock.Installer\bin\Release\FocusLockSetup.msi`
 
 Debug variant:
 
@@ -99,7 +110,44 @@ Debug variant:
 .\build\build.ps1 -Configuration Debug
 ```
 
-After a successful run, the MSI is under `installer/FocusLock.Installer/bin/<Configuration>/` (the script prints the exact path).
+## Developer workflow
+
+### Running the UI during development
+
+The UI requires administrator rights (it is declared `requireAdministrator` in its manifest). **Open your terminal as Administrator**, then:
+
+```powershell
+dotnet run --project src\FocusLock.UI
+```
+
+This compiles from source and launches the WPF window in-place. Because the Windows Service is not installed in a development environment, the dashboard will show "Cannot reach Focus Lock Service" — that is expected. All UI layout and navigation changes are fully visible without the service.
+
+> **Note:** `dotnet run` compiles into `src\FocusLock.UI\bin\Debug\` and never touches the `publish\` directory. It does not update the MSI or the installed application.
+
+### Updating the published executables
+
+After editing code, rebuild the publish output and installer with:
+
+```powershell
+.\build\build.ps1
+```
+
+Then reinstall the updated MSI to pick up the changes in the installed application.
+
+### End-to-end testing with the service
+
+To test the full stack (UI + service enforcing blocks):
+
+1. Run `.\build\build.ps1` to produce a fresh MSI.
+2. Install `installer\FocusLock.Installer\bin\Release\FocusLockSetup.msi`.
+   - This installs everything to `C:\Program Files\FocusLock\` and starts the service automatically.
+   - The source code directory is **not needed** after installation.
+3. Launch **Focus Lock** from the Start menu (UAC prompt expected).
+4. To update after further code changes: run `build.ps1` again and reinstall the MSI.
+
+### The MSI is the standalone distributable
+
+`FocusLockSetup.msi` is a self-contained installer — it bundles all executables and DLLs. The only external prerequisite is the **.NET 9 Desktop Runtime**, which must be installed on the target machine before running the MSI. The installer will show an error and abort if the runtime is not present.
 
 ## Operational notes / safety
 
