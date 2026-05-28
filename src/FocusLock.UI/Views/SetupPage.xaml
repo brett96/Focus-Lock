@@ -214,8 +214,7 @@
                        AllowsTransparency="True"
                        Closed="AppPopup_Closed">
                     <Border Background="#313244" BorderBrush="#585B70" BorderThickness="1"
-                            CornerRadius="6" Width="320"
-                            Effect="{DynamicResource {x:Static SystemParameters.DropShadowKey}}">
+                            CornerRadius="6" Width="320">
                         <StackPanel>
                             <!-- Search -->
                             <Border BorderBrush="#585B70" BorderThickness="0,0,0,1" Padding="8">
@@ -235,7 +234,7 @@
                                             <DataTemplate>
                                                 <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                                           Content="{Binding DisplayName}"
-                                                          Style="{StaticResource AppCheckBox}"/>
+                                                          Style="{DynamicResource AppCheckBox}"/>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
