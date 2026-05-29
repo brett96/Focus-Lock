@@ -243,6 +243,92 @@
                 </StackPanel>
             </Border>
 
+            <!-- ── BEDTIMES ──────────────────────────────────────────────────── -->
+
+            <TextBlock Text="BEDTIMES" FontSize="11" FontWeight="Bold"
+                       Foreground="#6C7086" Margin="0,0,0,8"/>
+            <TextBlock Text="Sign-out windows enforced during an active focus session."
+                       Foreground="#6C7086" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap"/>
+
+            <ItemsControl ItemsSource="{Binding Bedtimes}" Margin="0,0,0,8">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="#313244" CornerRadius="6" Padding="12,8" Margin="0,0,0,4">
+                            <Grid>
+                                <TextBlock Text="{Binding ScheduleSummary, Mode=OneWay}"
+                                           Foreground="#CDD6F4" FontSize="13" FontWeight="SemiBold"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <Button Content="Edit" Command="{Binding EditCommand}"
+                                            Background="Transparent" Foreground="#89B4FA"
+                                            BorderThickness="0" Cursor="Hand" FontSize="12"
+                                            Padding="8,0" Margin="0,0,4,0"/>
+                                    <Button Content="✕" Command="{Binding RemoveCommand}"
+                                            Background="Transparent" Foreground="#F38BA8"
+                                            BorderThickness="0" Cursor="Hand" FontSize="14"
+                                            Padding="8,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Button Content="+ Add Bedtime"
+                    Command="{Binding ShowAddBedtimeCommand}"
+                    Visibility="{Binding IsNotAddingBedtime, Converter={StaticResource BoolToVisibility}}"
+                    Style="{StaticResource PrimaryButton}"
+                    HorizontalAlignment="Left" Margin="0,0,0,24"/>
+
+            <Border Background="#313244" CornerRadius="8" Padding="18,16" Margin="0,0,0,24"
+                    Visibility="{Binding IsAddingBedtime, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="{Binding BedtimeFormTitle}" FontSize="15" FontWeight="SemiBold"
+                               Foreground="#CDD6F4" Margin="0,0,0,14"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <CheckBox IsChecked="{Binding BedtimeDraftMon}" Content="Mon" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                        <CheckBox IsChecked="{Binding BedtimeDraftTue}" Content="Tue" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                        <CheckBox IsChecked="{Binding BedtimeDraftWed}" Content="Wed" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                        <CheckBox IsChecked="{Binding BedtimeDraftThu}" Content="Thu" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                        <CheckBox IsChecked="{Binding BedtimeDraftFri}" Content="Fri" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                        <CheckBox IsChecked="{Binding BedtimeDraftSat}" Content="Sat" Style="{DynamicResource DayToggle}" Margin="0,0,6,0"/>
+                        <CheckBox IsChecked="{Binding BedtimeDraftSun}" Content="Sun" Style="{DynamicResource DayToggle}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="From" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E" Margin="0,0,4,0">
+                            <TextBox Text="{Binding BedtimeDraftStartHour, UpdateSourceTrigger=PropertyChanged}" Width="44" Style="{StaticResource TimeInputBox}"/>
+                        </Border>
+                        <TextBlock Text=":" Foreground="#A6ADC8" VerticalAlignment="Center" Margin="2,0"/>
+                        <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E" Margin="0,0,8,0">
+                            <TextBox Text="{Binding BedtimeDraftStartMinute, UpdateSourceTrigger=PropertyChanged}" Width="44" Style="{StaticResource TimeInputBox}"/>
+                        </Border>
+                        <RadioButton Content="AM" IsChecked="{Binding BedtimeDraftStartIsAm, Mode=TwoWay}" GroupName="BT_S" Style="{DynamicResource AmPmButton}"/>
+                        <RadioButton Content="PM" IsChecked="{Binding BedtimeDraftStartIsPm, Mode=TwoWay}" GroupName="BT_S" Style="{DynamicResource AmPmButton}"/>
+                        <TextBlock Text="to" Foreground="#A6ADC8" FontSize="13" VerticalAlignment="Center" Margin="12,0"/>
+                        <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E" Margin="0,0,4,0">
+                            <TextBox Text="{Binding BedtimeDraftEndHour, UpdateSourceTrigger=PropertyChanged}" Width="44" Style="{StaticResource TimeInputBox}"/>
+                        </Border>
+                        <TextBlock Text=":" Foreground="#A6ADC8" VerticalAlignment="Center" Margin="2,0"/>
+                        <Border BorderBrush="#585B70" BorderThickness="1" CornerRadius="6" Background="#1E1E2E" Margin="0,0,8,0">
+                            <TextBox Text="{Binding BedtimeDraftEndMinute, UpdateSourceTrigger=PropertyChanged}" Width="44" Style="{StaticResource TimeInputBox}"/>
+                        </Border>
+                        <RadioButton Content="AM" IsChecked="{Binding BedtimeDraftEndIsAm, Mode=TwoWay}" GroupName="BT_E" Style="{DynamicResource AmPmButton}"/>
+                        <RadioButton Content="PM" IsChecked="{Binding BedtimeDraftEndIsPm, Mode=TwoWay}" GroupName="BT_E" Style="{DynamicResource AmPmButton}"/>
+                    </StackPanel>
+                    <TextBlock Text="End before start spans overnight. Schedules cannot overlap other bedtimes or screen time limits."
+                               Foreground="#6C7086" FontSize="12" Margin="0,0,0,10" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding BedtimeAddError}" Foreground="#F38BA8" FontSize="12"
+                               Margin="0,0,0,8" TextWrapping="Wrap"
+                               Visibility="{Binding HasBedtimeAddError, Converter={StaticResource BoolToVisibility}}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button Content="{Binding BedtimeFormButtonText}" Command="{Binding AddBedtimeCommand}"
+                                Style="{StaticResource PrimaryButton}"/>
+                        <Button Content="Cancel" Command="{Binding CancelAddBedtimeCommand}"
+                                Style="{StaticResource DangerButton}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- ── APP TIME LIMITS ──────────────────────────────────────────── -->
 
             <TextBlock Text="APP TIME LIMITS" FontSize="11" FontWeight="Bold"

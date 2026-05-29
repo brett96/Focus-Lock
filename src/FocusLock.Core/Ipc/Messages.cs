@@ -45,6 +45,11 @@ public record SetScreenTimeConfigRequest(ScreenTimeConfig Config);
 
 public record ScreenTimeConfigResponse(ScreenTimeConfig Config);
 
+public record BedtimeOccurrenceInfo(
+    string ScheduleLabel,
+    DateTime StartsAtLocal,
+    DateTime EndsAtLocal);
+
 public record ScreenTimeStatusResponse(
     bool Enabled,
     int DailyLimitMinutes,
@@ -57,7 +62,11 @@ public record ScreenTimeStatusResponse(
     string? DailyScheduleLabel = null,
     DateTime? DailyScheduleResumesAtLocal = null,
     bool DailyShowingNextRuleToday = false,
-    bool DailyShowingLastEndedRuleToday = false);
+    bool DailyShowingLastEndedRuleToday = false,
+    bool BedtimesConfigured = false,
+    bool BedtimeActiveNow = false,
+    string? ActiveBedtimeLabel = null,
+    List<BedtimeOccurrenceInfo>? UpcomingBedtimesDuringSession = null);
 
 public record AppUsageStatus(
     string ExeName,

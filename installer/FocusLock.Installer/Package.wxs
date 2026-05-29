@@ -64,7 +64,7 @@
           <ServiceInstall Id="FocusLockServiceInstall"
                          Name="FocusLockService"
                          DisplayName="Focus Lock Service"
-                         Description="Manages Focus Lock sessions and enforces app and website blocking."
+                         Description="Manages Focus Lock sessions, bedtimes, and enforces app and website blocking."
                          Type="ownProcess"
                          Start="auto"
                          ErrorControl="normal"

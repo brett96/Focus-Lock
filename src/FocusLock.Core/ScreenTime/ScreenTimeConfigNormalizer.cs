@@ -30,6 +30,12 @@ public static class ScreenTimeConfigNormalizer
                 app.Id = Guid.NewGuid().ToString("N");
         }
 
+        foreach (var bedtime in config.Bedtimes)
+        {
+            if (string.IsNullOrWhiteSpace(bedtime.Id))
+                bedtime.Id = Guid.NewGuid().ToString("N");
+        }
+
         config.EnableDailyLimit = config.DailyLimits.Count > 0;
 
         if (config.DailyLimits.Count > 0)

@@ -13,5 +13,7 @@ public class ScreenTimeConfig
 
     public List<DailyTimeLimit> DailyLimits { get; set; } = new();
 
+    public List<BedtimeRule> Bedtimes { get; set; } = new();
+
     public List<AppTimeLimit> AppLimits { get; set; } = new();
 }

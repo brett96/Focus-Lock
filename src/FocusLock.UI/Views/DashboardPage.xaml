@@ -139,6 +139,32 @@
                             </StackPanel>
                         </Border>
 
+                        <Border Background="#313244" CornerRadius="8" Padding="14,12" Margin="0,0,0,8"
+                                Visibility="{Binding ShowBedtimesDuringSession, Converter={StaticResource BoolToVisibility}}">
+                            <StackPanel>
+                                <TextBlock Text="Bedtimes" Foreground="#CDD6F4" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                <TextBlock Foreground="#F38BA8" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6"
+                                           Visibility="{Binding BedtimeActiveNow, Converter={StaticResource BoolToVisibility}}">
+                                    <Run Text="Active now: "/>
+                                    <Run Text="{Binding ActiveBedtimeLabel, Mode=OneWay}"/>
+                                    <Run Text=" — sign-out enforced"/>
+                                </TextBlock>
+                                <TextBlock Text="Upcoming during this session:" Foreground="#A6ADC8"
+                                           FontSize="12" Margin="0,0,0,4"/>
+                                <ItemsControl ItemsSource="{Binding UpcomingBedtimes}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Foreground="#FAB387" FontSize="12" Margin="0,0,0,4" TextWrapping="Wrap">
+                                                <Run Text="{Binding ScheduleLabel, Mode=OneWay}"/>
+                                                <Run Text=" · "/>
+                                                <Run Text="{Binding WindowText, Mode=OneWay}"/>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
                         <ItemsControl ItemsSource="{Binding AppUsages}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>

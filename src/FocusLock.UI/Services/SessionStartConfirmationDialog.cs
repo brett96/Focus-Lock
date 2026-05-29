@@ -12,10 +12,11 @@ public static class SessionStartConfirmationDialog
         IReadOnlyList<BlockedApp> blockedApps,
         IReadOnlyList<BlockedSite> blockedSites,
         IReadOnlyList<DailyTimeLimitViewModel> dailyLimits,
-        IReadOnlyList<AppTimeLimitViewModel> appLimits)
+        IReadOnlyList<AppTimeLimitViewModel> appLimits,
+        IReadOnlyList<BedtimeViewModel> bedtimes)
     {
         var message = BuildMessage(
-            deadlineLocal, mode, blockedApps, blockedSites, dailyLimits, appLimits);
+            deadlineLocal, mode, blockedApps, blockedSites, dailyLimits, appLimits, bedtimes);
 
         return System.Windows.MessageBox.Show(
             message,
@@ -30,7 +31,8 @@ public static class SessionStartConfirmationDialog
         IReadOnlyList<BlockedApp> blockedApps,
         IReadOnlyList<BlockedSite> blockedSites,
         IReadOnlyList<DailyTimeLimitViewModel> dailyLimits,
-        IReadOnlyList<AppTimeLimitViewModel> appLimits)
+        IReadOnlyList<AppTimeLimitViewModel> appLimits,
+        IReadOnlyList<BedtimeViewModel> bedtimes)
     {
         var sb = new StringBuilder();
         sb.AppendLine("Start this focus session?");
@@ -40,14 +42,17 @@ public static class SessionStartConfirmationDialog
             ? "Mode: Strict — cannot end early"
             : "Mode: Regular — can end early");
 
-        AppendSection(sb, "Blocked apps", blockedApps.Count,
-            blockedApps.Select(a => FormatApp(a.DisplayName, a.ExeName)));
-        AppendSection(sb, "Blocked websites", blockedSites.Count,
-            blockedSites.Select(s => s.Domain));
+        if (blockedApps.Count > 0)
+            sb.AppendLine($"Blocked applications: {blockedApps.Count}");
+        if (blockedSites.Count > 0)
+            sb.AppendLine($"Blocked websites: {blockedSites.Count}");
+
         AppendSection(sb, "Screen time limits — daily", dailyLimits.Count,
             dailyLimits.Select(d => $"{d.LimitSummary} — {d.ScheduleSummary}"));
         AppendSection(sb, "App time limits", appLimits.Count,
             appLimits.Select(a => $"{a.DisplayName} — {a.LimitSummary} — {a.ScheduleSummary}"));
+        AppendSection(sb, "Bedtimes", bedtimes.Count,
+            bedtimes.Select(b => b.ScheduleSummary));
 
         if (mode == SessionMode.Strict)
         {
@@ -70,10 +75,4 @@ public static class SessionStartConfirmationDialog
         foreach (var line in lines)
             sb.AppendLine($"• {line}");
     }
-
-    private static string FormatApp(string displayName, string exeName)
-        => string.Equals(displayName, exeName, StringComparison.OrdinalIgnoreCase)
-            || string.IsNullOrWhiteSpace(displayName)
-                ? exeName
-                : $"{displayName} ({exeName})";
 }

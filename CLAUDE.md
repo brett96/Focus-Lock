@@ -67,7 +67,7 @@ FocusLock.sln
 | `src/FocusLock.Core/Ipc/PipeFraming.cs` | Length-prefixed JSON wire framing |
 | `src/FocusLock.Service/SessionWorker.cs` | Named-pipe IPC server + screen-time loop host |
 | `src/FocusLock.Service/SessionManager.cs` | Session state, start/end handlers, blocking orchestration |
-| `src/FocusLock.Service/ScreenTimeManager.cs` | Screen/app time limits — **only enforced while a session is active** |
+| `src/FocusLock.Service/ScreenTimeManager.cs` | Screen time during sessions: bedtimes, daily limits, per-app limits |
 | `src/FocusLock.Service/AppMonitorWorker.cs` | Kills blocked processes, repairs IFEO keys |
 | `src/FocusLock.Service/DeadlineWatcherWorker.cs` | Ends session when deadline is reached |
 | `src/FocusLock.Service/Blocking/AppBlocker.cs` | IFEO writes, process kill, IFEO repair |
@@ -80,12 +80,14 @@ FocusLock.sln
 | `src/FocusLock.UI/ViewModels/DashboardViewModel.cs` | Singleton dashboard VM — session countdown, blocks, live screen time |
 | `src/FocusLock.UI/ViewModels/SetupViewModel.cs` | New-session wizard — blocks, categories, screen time add/edit, deadline validation |
 | `src/FocusLock.Core/Models/DailyTimeLimit.cs` | One daily screen-time rule (id, minutes, schedule) |
+| `src/FocusLock.Core/Models/BedtimeRule.cs` | One bedtime schedule (id + day/time range) |
+| `src/FocusLock.Core/ScreenTime/BedtimeScheduleHelper.cs` | Bedtime active detection (incl. overnight), occurrence listing, schedule conflict checks |
 | `src/FocusLock.Core/ScreenTime/ScreenTimeScheduleHelper.cs` | Schedule phases, next-start resolution, `ResolveDailyLimitDisplay` for dashboard focus rule |
-| `src/FocusLock.Core/ScreenTime/ScreenTimeScheduleOverlap.cs` | Overlap detection for daily and per-app limit schedules |
+| `src/FocusLock.Core/ScreenTime/ScreenTimeScheduleOverlap.cs` | Overlap detection for daily, app, and bedtime schedules |
 | `src/FocusLock.Core/ScreenTime/DailyLimitDisplayContext.cs` | Which daily rule the dashboard/status should highlight |
 | `src/FocusLock.UI/ViewModels/ScreenTimeViewModel.cs` | Standalone Screen Time settings page — add/edit/remove limits |
 | `src/FocusLock.UI/ViewModels/DailyTimeLimitViewModel.cs` | List row VM for a daily limit (`EditCommand`, delete) |
-| `src/FocusLock.UI/ViewModels/AppTimeLimitViewModel.cs` | List row VM for a per-app limit (`EditCommand`, delete) |
+| `src/FocusLock.UI/ViewModels/BedtimeViewModel.cs` | List row VM for a bedtime (`EditCommand`, delete) |
 | `src/FocusLock.UI/Controls/TimePartSpinBox.xaml` | Hour/minute spinners for deadline and schedule times |
 
 ### IPC message types
@@ -127,15 +129,19 @@ WPF MVVM app using `CommunityToolkit.Mvvm` (`[ObservableProperty]`, `[RelayComma
 
 Pages: `DashboardPage` (primary idle/active UI), `SetupPage` (wizard), `ActiveSessionPage` (legacy/alternate), `ScreenTimePage`, `SettingsPage`.
 
-**Screen Time enforcement**: `ScreenTimeManager` tracks multiple `DailyLimits` (each with its own schedule and per-rule usage in `DailyRuleUsage`). At most one daily rule is active at any instant; overlap is prevented at setup. Per-app limits use rule `Id` for state; same app may have multiple non-overlapping limits.
+| `src/FocusLock.UI/ViewModels/AppTimeLimitViewModel.cs` | List row VM for a per-app limit (`EditCommand`, delete) |
+
+**Bedtimes** (`BedtimeRule`, `BedtimeScheduleHelper`): Stored in `ScreenTimeConfig.Bedtimes`. Enforced by `ScreenTimeManager.TickBedtime` only while `_sessionActive`. Active bedtime → toast → `WTSDisconnectSession` after 5s; re-login repeats until window ends. `ShouldRunTick()` is `_sessionActive` only (bedtimes do not keep the loop running without a session). Overlap: `ScreenTimeScheduleOverlap.TryFindBedtimeLimitConflict` / `HasBedtimeLimitConflicts`. Overnight: end ≤ start on start day; morning tail uses previous day’s flag.
+
+**Screen Time enforcement (sessions)**: `ScreenTimeManager` tracks multiple `DailyLimits` (each with its own schedule and per-rule usage in `DailyRuleUsage`). At most one daily rule is active at any instant; overlap is prevented at setup. Per-app limits use rule `Id` for state; same app may have multiple non-overlapping limits.
 
 **Screen time limit editing** (`SetupViewModel`, `ScreenTimeViewModel`): list rows use `DailyTimeLimitViewModel` / `AppTimeLimitViewModel` with `EditCommand` + delete callback. Edit sets `_editingDailyLimitId` / `_editingAppLimitId`, opens the add form pre-filled, and switches form title/button to “Edit …” / “Save”. Save preserves the existing rule `Id`. Overlap checks pass `excludeId` so the rule being edited does not conflict with itself. XAML: Edit button left of delete on `SetupPage` and `ScreenTimePage`.
 
-**Screen time dashboard**: `GetScreenTimeStatus` includes schedule phase fields (`DailyScheduleActiveNow`, `DailyScheduleWindowEndedForToday`, `DailyScheduleResumesAtLocal`, `DailyShowingNextRuleToday`, `DailyShowingLastEndedRuleToday`). `ScreenTimeScheduleHelper.ResolveDailyLimitDisplay` picks which daily rule to surface in status/UI. Priority: (1) rule active now, (2) next timed window later today, (3) last ended window today (`ReferenceTimeLocal` = end time), (4) next start on a future day. Enforcement in `ScreenTimeManager` still uses whichever rule is active at the current instant. Daily accumulation, lockout, and disconnect only run inside the active window; when a window ends, lockout clears and the UI reflects that limits are no longer in effect.
+**Screen time dashboard**: `GetScreenTimeStatus` includes schedule phase fields for daily limits plus `BedtimeActiveNow`, `ActiveBedtimeLabel`, and `UpcomingBedtimesDuringSession` (bedtime windows intersecting `[now, session deadline]`). `ScreenTimeScheduleHelper.ResolveDailyLimitDisplay` picks which daily rule to surface. Dashboard `Bedtimes` panel shows active bedtime and upcoming windows during the session.
 
 **End session early**: `MessageBox` Yes/No, then `RequestEndSessionUntilAcknowledgedAsync` (up to 3 IPC attempts) and `WaitForSessionIdleAsync` (poll `GetSessionInfo` until idle, re-send `EndSession` if still active). Timers paused while ending. `ActiveSessionViewModel` still has a simpler end path if that page is used.
 
-**Start session confirm** (`SessionStartConfirmationDialog`): After setup validation in `StartSessionAsync`, a Yes/No dialog summarizes end date/time, Regular vs Strict mode, and bullet lists for blocked apps, sites, daily limits, and app limits. Cancel returns to the wizard without IPC.
+**Start session confirm** (`SessionStartConfirmationDialog`): After setup validation in `StartSessionAsync`, a Yes/No dialog summarizes end date/time, Regular vs Strict mode, blocked app/site counts, and bullet lists for daily limits, app limits, and bedtimes. Cancel returns to the wizard without IPC.
 
 **Service reachability UI**: `ServiceClient.SendAsync` retries (`IpcRetryAttempts` / `IpcRetryDelayMs`). Dashboard requires **3** consecutive failed session polls before `IsServiceUnreachable`; a successful `GetStatus` or `GetScreenTimeStatus` clears the streak. Pipe `MaxConnections` = 16 for UI + BlockerStub bursts.
 

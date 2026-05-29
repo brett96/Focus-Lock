@@ -1,6 +1,6 @@
 # Focus Lock
 
-Focus Lock is a **Windows self-parental-control app**: you start a timed “focus session” that **blocks chosen apps and websites until a deadline**. The app is designed so that the **privileged enforcement** happens in a Windows Service running as **LocalSystem**, while the UI is a normal desktop app that talks to the service over IPC.
+Focus Lock is a **Windows self-focus assistant app**: you start a timed “focus session” that **blocks chosen apps and websites until a deadline**. The app is designed so that the **privileged enforcement** happens in a Windows Service running as **LocalSystem**, while the UI is a normal desktop app that talks to the service over IPC.
 
 ## What it does
 
@@ -35,14 +35,19 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
   - When the daily limit uses a **schedule window**, the dashboard shows that window and whether tracking is active now. With **multiple daily limits on the same day**, the dashboard highlights one rule at a time: the **currently active** window first; if none is active, the **next upcoming** window today (“Next daily limit window” / “Starts at …”); if all of today’s windows have ended, the **most recently ended** window (“Last window ended at …”). Outside any window, the remaining-time line shows when tracking resumes.
   - **Warning toasts** at 5 and 1 minutes remaining for the daily total and per-app limits (5‑minute warning skipped if the limit is under 5 minutes).
   - When a screen-time-limited app is blocked, or a site is blocked over HTTP, the user gets a **native notification** (via `BlockerStub` and `IsBlockedResponse.BlockMessage`).
+- **Bedtimes** *(optional; enforced only during an active Focus Lock session)*
+  - Add **multiple bedtime schedules** on the **Screen Time** settings page or in the session setup wizard. Each bedtime is a day/time range (overnight ranges supported, e.g. 10 PM–7 AM). **Edit** and **Delete** on each row.
+  - While a **focus session is running** and a bedtime window is active, the service **signs the user out** (`WTSDisconnectSession`) and blocks re-login until the window ends. Re-login during an active bedtime repeats the sign-out flow.
+  - Bedtimes **cannot overlap** each other or any daily/app screen time limit schedule (same overlap rules as other screen time restrictions).
+  - During an active session, the dashboard lists **upcoming bedtimes** before the session deadline and shows when a bedtime is **active now**. Outside a session, bedtimes are not enforced.
 - **Session setup (New Focus Session wizard)**
   - Default end time is **one hour from now** (editable with date picker + `TimePartSpinBox` hour/minute spinners).
   - End date must be **at least 5 minutes** in the future and **no more than one year** ahead (enforced in UI and service).
   - **Blocked apps and websites are optional** if you enable a daily screen-time limit and/or add per-app time limits.
   - **Website categories** — preset domain groups (Adult, Entertainment, Social, etc.) can be toggled on the setup screen.
-  - **Screen time limits** — add, **edit**, or remove daily and per-app limits in the wizard; overlap validation runs on add/save (the rule being edited is excluded from the check).
+  - **Screen time limits** — add, **edit**, or remove daily, per-app, and **bedtime** schedules in the wizard; overlap validation runs on add/save (the rule being edited is excluded from the check).
   - At least one restriction is required to start: blocked apps, blocked sites, or screen time limits.
-  - **Start Session** shows a Yes/No confirmation listing the session end date/time, mode (Regular or Strict), and every active restriction (blocked apps, blocked websites, daily screen time limits, and app time limits) before the session is sent to the service.
+  - **Start Session** shows a Yes/No confirmation listing the session end date/time, mode (Regular or Strict), counts of blocked apps and websites, and details of screen time limits and bedtimes before the session is sent to the service.
 - **Dashboard UX**
   - Main active-session view is `DashboardPage` (not `ActiveSessionPage`).
   - **End Session Early** (regular mode only) shows a Yes/No confirmation, then the same ending progress UI until the session is fully idle.
@@ -103,7 +108,7 @@ The service runs four loops concurrently:
 - **Pipe server**: handles UI/stub requests
 - **App monitor** (`AppMonitorWorker`): kills blocked processes, repairs IFEO keys, verifies screen-time IFEO
 - **Deadline watcher** (`DeadlineWatcherWorker`): ends the session automatically when the deadline is reached
-- **Screen Time tracker** (`ScreenTimeManager`): 1-second tick loop (active only while a focus session is running) that accumulates usage, enforces daily limits (via `WTSDisconnectSession`), and applies per-app IFEO blocks when quotas are exceeded
+- **Screen Time tracker** (`ScreenTimeManager`): 1-second tick loop while a focus session is active — bedtimes (sign-out), daily limits (`WTSDisconnectSession`), and per-app IFEO blocks when quotas are exceeded.
 
 ### Blocker stub (IFEO target)
 

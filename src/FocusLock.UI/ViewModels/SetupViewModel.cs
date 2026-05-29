@@ -165,6 +165,61 @@ public partial class SetupViewModel : ObservableObject
     public bool StDailyDraftEndIsAm { get => StDailyDraftEndAmPm == "AM"; set { if (value) StDailyDraftEndAmPm = "AM"; } }
     public bool StDailyDraftEndIsPm { get => StDailyDraftEndAmPm == "PM"; set { if (value) StDailyDraftEndAmPm = "PM"; } }
 
+    // ── Screen Time — bedtimes list ───────────────────────────────────────────
+
+    public ObservableCollection<BedtimeViewModel> StBedtimes { get; } = new();
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StIsNotAddingBedtime))]
+    private bool _stIsAddingBedtime;
+
+    public bool StIsNotAddingBedtime => !StIsAddingBedtime;
+
+    private string? _stEditingBedtimeId;
+
+    public string StBedtimeFormTitle =>
+        _stEditingBedtimeId is not null ? "Edit Bedtime" : "Add Bedtime";
+    public string StBedtimeFormButtonText => _stEditingBedtimeId is not null ? "Save" : "Add";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasStBedtimeAddError))]
+    private string _stBedtimeAddError = string.Empty;
+
+    public bool HasStBedtimeAddError => !string.IsNullOrEmpty(StBedtimeAddError);
+
+    private DayOfWeekFlags _stBedtimeDraftDays = DayOfWeekFlags.Monday | DayOfWeekFlags.Tuesday |
+        DayOfWeekFlags.Wednesday | DayOfWeekFlags.Thursday | DayOfWeekFlags.Friday;
+
+    public bool StBedtimeDraftMon { get => GetDay(_stBedtimeDraftDays, DayOfWeekFlags.Monday);    set => SetDay(ref _stBedtimeDraftDays, DayOfWeekFlags.Monday,    value, nameof(StBedtimeDraftMon)); }
+    public bool StBedtimeDraftTue { get => GetDay(_stBedtimeDraftDays, DayOfWeekFlags.Tuesday);   set => SetDay(ref _stBedtimeDraftDays, DayOfWeekFlags.Tuesday,   value, nameof(StBedtimeDraftTue)); }
+    public bool StBedtimeDraftWed { get => GetDay(_stBedtimeDraftDays, DayOfWeekFlags.Wednesday); set => SetDay(ref _stBedtimeDraftDays, DayOfWeekFlags.Wednesday, value, nameof(StBedtimeDraftWed)); }
+    public bool StBedtimeDraftThu { get => GetDay(_stBedtimeDraftDays, DayOfWeekFlags.Thursday);  set => SetDay(ref _stBedtimeDraftDays, DayOfWeekFlags.Thursday,  value, nameof(StBedtimeDraftThu)); }
+    public bool StBedtimeDraftFri { get => GetDay(_stBedtimeDraftDays, DayOfWeekFlags.Friday);    set => SetDay(ref _stBedtimeDraftDays, DayOfWeekFlags.Friday,    value, nameof(StBedtimeDraftFri)); }
+    public bool StBedtimeDraftSat { get => GetDay(_stBedtimeDraftDays, DayOfWeekFlags.Saturday);  set => SetDay(ref _stBedtimeDraftDays, DayOfWeekFlags.Saturday,  value, nameof(StBedtimeDraftSat)); }
+    public bool StBedtimeDraftSun { get => GetDay(_stBedtimeDraftDays, DayOfWeekFlags.Sunday);    set => SetDay(ref _stBedtimeDraftDays, DayOfWeekFlags.Sunday,    value, nameof(StBedtimeDraftSun)); }
+
+    [ObservableProperty] private string _stBedtimeDraftStartHour   = "10";
+    [ObservableProperty] private string _stBedtimeDraftStartMinute = "00";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StBedtimeDraftStartIsAm))]
+    [NotifyPropertyChangedFor(nameof(StBedtimeDraftStartIsPm))]
+    private string _stBedtimeDraftStartAmPm = "PM";
+
+    public bool StBedtimeDraftStartIsAm { get => StBedtimeDraftStartAmPm == "AM"; set { if (value) StBedtimeDraftStartAmPm = "AM"; } }
+    public bool StBedtimeDraftStartIsPm { get => StBedtimeDraftStartAmPm == "PM"; set { if (value) StBedtimeDraftStartAmPm = "PM"; } }
+
+    [ObservableProperty] private string _stBedtimeDraftEndHour   = "7";
+    [ObservableProperty] private string _stBedtimeDraftEndMinute = "00";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StBedtimeDraftEndIsAm))]
+    [NotifyPropertyChangedFor(nameof(StBedtimeDraftEndIsPm))]
+    private string _stBedtimeDraftEndAmPm = "AM";
+
+    public bool StBedtimeDraftEndIsAm { get => StBedtimeDraftEndAmPm == "AM"; set { if (value) StBedtimeDraftEndAmPm = "AM"; } }
+    public bool StBedtimeDraftEndIsPm { get => StBedtimeDraftEndAmPm == "PM"; set { if (value) StBedtimeDraftEndAmPm = "PM"; } }
+
     // ── Screen Time — app limits list ─────────────────────────────────────────
 
     public ObservableCollection<AppTimeLimitViewModel> StAppLimits { get; } = new();
@@ -334,7 +389,13 @@ public partial class SetupViewModel : ObservableObject
         StAppLimits.Clear();
         foreach (var limit in config.AppLimits)
             StAppLimits.Add(new AppTimeLimitViewModel(limit, StRemoveAppLimit, StEditAppLimit));
+
+        StBedtimes.Clear();
+        foreach (var bedtime in config.Bedtimes)
+            StBedtimes.Add(new BedtimeViewModel(bedtime, StRemoveBedtime, StEditBedtime));
     }
+
+    private void StRemoveBedtime(BedtimeViewModel vm) => StBedtimes.Remove(vm);
 
     private void StRemoveDailyLimit(DailyTimeLimitViewModel vm) => StDailyLimits.Remove(vm);
     private void StRemoveAppLimit(AppTimeLimitViewModel vm) => StAppLimits.Remove(vm);
@@ -397,6 +458,26 @@ public partial class SetupViewModel : ObservableObject
             StRefreshDayProps("StDraft");
         }
         NotifyAppFormChrome();
+    }
+
+    private void StEditBedtime(BedtimeViewModel vm)
+    {
+        StBedtimeAddError     = string.Empty;
+        _stEditingBedtimeId   = vm.Id;
+        StIsAddingBedtime     = true;
+        _stBedtimeDraftDays   = vm.Schedule.ActiveDays;
+        StRefreshDayProps("StBedtimeDraft");
+        (StBedtimeDraftStartHour, StBedtimeDraftStartMinute, StBedtimeDraftStartAmPm) =
+            StToTimeFields(vm.Schedule.StartTime);
+        (StBedtimeDraftEndHour, StBedtimeDraftEndMinute, StBedtimeDraftEndAmPm) =
+            StToTimeFields(vm.Schedule.EndTime);
+        NotifyBedtimeFormChrome();
+    }
+
+    private void NotifyBedtimeFormChrome()
+    {
+        OnPropertyChanged(nameof(StBedtimeFormTitle));
+        OnPropertyChanged(nameof(StBedtimeFormButtonText));
     }
 
     private void NotifyDailyFormChrome()
@@ -547,7 +628,8 @@ public partial class SetupViewModel : ObservableObject
                 BlockedApps.ToList(),
                 BlockedSites.ToList(),
                 StDailyLimits.ToList(),
-                StAppLimits.ToList()))
+                StAppLimits.ToList(),
+                StBedtimes.ToList()))
             return;
 
         IsBusy = true;
@@ -628,8 +710,9 @@ public partial class SetupViewModel : ObservableObject
         }
 
         var existing = StDailyLimits.Select(d => d.ToModel()).ToList();
-        if (ScreenTimeScheduleOverlap.TryFindDailyLimitOverlap(
-                existing, schedule, out var overlapMsg, _stEditingDailyLimitId))
+        if (ScreenTimeScheduleOverlap.TryFindDailyLimitBedtimeConflict(
+                StBedtimes.Select(b => b.ToModel()).ToList(),
+                schedule, existing, out var overlapMsg, _stEditingDailyLimitId))
         {
             StDailyLimitAddError = overlapMsg!;
             return;
@@ -723,8 +806,9 @@ public partial class SetupViewModel : ObservableObject
         }
 
         var existing = StAppLimits.Select(a => a.ToModel()).ToList();
-        if (ScreenTimeScheduleOverlap.TryFindAppLimitOverlap(
-                existing, StDraftExeName, candidateSchedule, out var overlapMsg, _stEditingAppLimitId))
+        if (ScreenTimeScheduleOverlap.TryFindAppLimitBedtimeConflict(
+                StBedtimes.Select(b => b.ToModel()).ToList(),
+                StDraftExeName, candidateSchedule, existing, out var overlapMsg, _stEditingAppLimitId))
         {
             StAppLimitAddError = overlapMsg!;
             return;
@@ -755,6 +839,73 @@ public partial class SetupViewModel : ObservableObject
         NotifyAppFormChrome();
     }
 
+    [RelayCommand]
+    private void StShowAddBedtime()
+    {
+        StBedtimeAddError   = string.Empty;
+        _stEditingBedtimeId = null;
+        StIsAddingBedtime   = true;
+        _stBedtimeDraftDays = DayOfWeekFlags.Monday | DayOfWeekFlags.Tuesday |
+            DayOfWeekFlags.Wednesday | DayOfWeekFlags.Thursday | DayOfWeekFlags.Friday;
+        StRefreshDayProps("StBedtimeDraft");
+        StBedtimeDraftStartHour = "10"; StBedtimeDraftStartMinute = "00"; StBedtimeDraftStartAmPm = "PM";
+        StBedtimeDraftEndHour   = "7";  StBedtimeDraftEndMinute   = "00"; StBedtimeDraftEndAmPm   = "AM";
+        NotifyBedtimeFormChrome();
+    }
+
+    [RelayCommand]
+    private void StCancelAddBedtime()
+    {
+        _stEditingBedtimeId = null;
+        StIsAddingBedtime   = false;
+        NotifyBedtimeFormChrome();
+    }
+
+    [RelayCommand]
+    private void StAddBedtime()
+    {
+        StBedtimeAddError = string.Empty;
+        var schedule = BuildStBedtimeDraftSchedule();
+        if (schedule.ActiveDays == DayOfWeekFlags.None)
+        {
+            StBedtimeAddError = "Select at least one day for this bedtime.";
+            return;
+        }
+        if (!BedtimeScheduleHelper.IsValidBedtimeSchedule(schedule))
+        {
+            StBedtimeAddError = "Enter a valid start and end time (they cannot be identical).";
+            return;
+        }
+
+        var bedtimes = StBedtimes.Select(b => b.ToModel()).ToList();
+        if (ScreenTimeScheduleOverlap.TryFindBedtimeLimitConflict(
+                bedtimes, schedule,
+                StDailyLimits.Select(d => d.ToModel()).ToList(),
+                StAppLimits.Select(a => a.ToModel()).ToList(),
+                out var overlapMsg, _stEditingBedtimeId))
+        {
+            StBedtimeAddError = overlapMsg!;
+            return;
+        }
+
+        var rule = new BedtimeRule
+        {
+            Id       = _stEditingBedtimeId ?? Guid.NewGuid().ToString("N"),
+            Schedule = schedule
+        };
+
+        if (_stEditingBedtimeId is not null)
+        {
+            var old = StBedtimes.FirstOrDefault(b => b.Id == _stEditingBedtimeId);
+            if (old is not null) StBedtimes.Remove(old);
+            _stEditingBedtimeId = null;
+        }
+
+        StBedtimes.Add(new BedtimeViewModel(rule, StRemoveBedtime, StEditBedtime));
+        StIsAddingBedtime = false;
+        NotifyBedtimeFormChrome();
+    }
+
     // ── Builders ──────────────────────────────────────────────────────────────
 
     private DateTime ComputedDeadline()
@@ -771,7 +922,15 @@ public partial class SetupViewModel : ObservableObject
     internal ScreenTimeConfig BuildScreenTimeConfig() => new()
     {
         DailyLimits = StDailyLimits.Select(d => d.ToModel()).ToList(),
+        Bedtimes    = StBedtimes.Select(b => b.ToModel()).ToList(),
         AppLimits   = StAppLimits.Select(a => a.ToModel()).ToList()
+    };
+
+    private ScreenTimeSchedule BuildStBedtimeDraftSchedule() => new()
+    {
+        ActiveDays = _stBedtimeDraftDays,
+        StartTime  = StParseTimeTo(StBedtimeDraftStartHour, StBedtimeDraftStartMinute, StBedtimeDraftStartAmPm),
+        EndTime    = StParseTimeTo(StBedtimeDraftEndHour,   StBedtimeDraftEndMinute,   StBedtimeDraftEndAmPm)
     };
 
     private ScreenTimeSchedule BuildStDailyDraftSchedule()

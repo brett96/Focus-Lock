@@ -9,8 +9,8 @@ using FocusLock.Service.Blocking;
 namespace FocusLock.Service;
 
 /// <summary>
-/// Runs a 1-second tick loop that enforces screen time limits only while a
-/// Focus Lock session is active. Owned and started by SessionWorker.
+/// Runs a 1-second tick loop while a Focus Lock session is active: bedtimes, daily limits,
+/// and per-app screen time enforcement.
 /// </summary>
 public sealed class ScreenTimeManager
 {
@@ -34,6 +34,9 @@ public sealed class ScreenTimeManager
         _config     = ScreenTimeConfigRepository.Load();
     }
 
+    // Tracks bedtime disconnect notification for the current login.
+    private DateTime? _bedtimeNotifiedAt;
+
     // Tracks the "lockout notification was sent for this login" moment.
     private DateTime? _lockoutNotifiedAt;
     // Last observed console session ID; used to detect login transitions.
@@ -51,12 +54,12 @@ public sealed class ScreenTimeManager
         {
             try
             {
-                if (_sessionActive)
+                if (ShouldRunTick())
                 {
                     bool userActive = IsUserLoggedIn(out uint sessionId);
                     HashSet<string>? running = null;
                     string? foreground = null;
-                    if (_config.AppLimits.Count > 0)
+                    if (_sessionActive && _config.AppLimits.Count > 0)
                     {
                         running    = GetRunningExeNames();
                         foreground = GetForegroundExeName();
@@ -84,6 +87,8 @@ public sealed class ScreenTimeManager
         try { ScreenTimeStateRepository.Save(_state); }
         finally { _lock.Release(); }
     }
+
+    private bool ShouldRunTick() => _sessionActive;
 
     private readonly record struct TickSnapshot(
         DateTime Now,
@@ -116,11 +121,25 @@ public sealed class ScreenTimeManager
         if (ScreenTimeScheduleOverlap.HasInternalAppLimitOverlap(req.Config.AppLimits, out var appMsg))
             return new AckResponse(false, appMsg);
 
+        foreach (var bedtime in req.Config.Bedtimes)
+        {
+            if (!BedtimeScheduleHelper.IsValidBedtimeSchedule(bedtime.Schedule))
+                return new AckResponse(false, "Each bedtime must include at least one day and a start/end time.");
+        }
+
+        if (ScreenTimeScheduleOverlap.HasInternalBedtimeOverlap(req.Config.Bedtimes, out var bedtimeMsg))
+            return new AckResponse(false, bedtimeMsg);
+
+        if (ScreenTimeScheduleOverlap.HasBedtimeLimitConflicts(
+                req.Config.Bedtimes, req.Config.DailyLimits, req.Config.AppLimits, out var conflictMsg))
+            return new AckResponse(false, conflictMsg);
+
         await _lock.WaitAsync();
         try
         {
             _config = req.Config;
             ScreenTimeConfigRepository.Save(_config);
+            _bedtimeNotifiedAt = null;
             _log.LogInformation("Screen time config updated.");
             return new AckResponse(true);
         }
@@ -137,6 +156,7 @@ public sealed class ScreenTimeManager
             _sessionActive = true;
             _state = new ScreenTimeState { Date = DateOnly.FromDateTime(DateTime.Now) };
             _lockoutNotifiedAt = null;
+            _bedtimeNotifiedAt = null;
             _lastSessionId = 0xFFFFFFFF;
             _stateDirty = true;
             _log.LogInformation("Screen time tracking started for focus session.");
@@ -159,6 +179,7 @@ public sealed class ScreenTimeManager
             _state.TotalSecondsUsed = 0;
             _state.DailyRuleUsage.Clear();
             _lockoutNotifiedAt = null;
+            _bedtimeNotifiedAt = null;
             _stateDirty = true;
             _lastStatusSnapshot = null;
             ScreenTimeStateRepository.Save(_state);
@@ -216,11 +237,9 @@ public sealed class ScreenTimeManager
 
     public ScreenTimeStatusResponse HandleGetStatus()
     {
-        if (!_sessionActive)
+        if (!ShouldRunTick())
             return new ScreenTimeStatusResponse(false, 0, 0, false, []);
 
-        // Never block the pipe server for long — the tick used to hold this lock during
-        // full process enumeration and starved all IPC (UI showed "service unreachable").
         if (!_lock.Wait(TimeSpan.FromMilliseconds(500)))
         {
             if (_lastStatusSnapshot is not null)
@@ -239,34 +258,40 @@ public sealed class ScreenTimeManager
 
     private ScreenTimeStatusResponse BuildStatusResponse(DateTime now)
     {
-        var statuses = _config.AppLimits.Select(limit =>
-        {
-            _state.AppUsage.TryGetValue(limit.Id, out var u);
-            bool blocked = limit.LimitType == AppLimitType.DailyTotal
-                ? u?.IsBlockedToday ?? false
-                : u?.IsBlockedInCurrentInterval ?? false;
+        var statuses = _sessionActive
+            ? _config.AppLimits.Select(limit =>
+            {
+                _state.AppUsage.TryGetValue(limit.Id, out var u);
+                bool blocked = limit.LimitType == AppLimitType.DailyTotal
+                    ? u?.IsBlockedToday ?? false
+                    : u?.IsBlockedInCurrentInterval ?? false;
 
-            return new AppUsageStatus(
-                limit.ExeName, limit.DisplayName,
-                limit.LimitType, limit.LimitMinutes,
-                u?.TotalSecondsToday ?? 0, blocked,
-                limit.LimitType == AppLimitType.Interval ? u?.CurrentIntervalSecondsUsed : null,
-                limit.LimitType == AppLimitType.Interval ? limit.IntervalMinutes : null,
-                limit.LimitType == AppLimitType.Interval
-                    ? ComputeIntervalResetsAt(now, limit)
-                    : null);
-        }).ToList();
+                return new AppUsageStatus(
+                    limit.ExeName, limit.DisplayName,
+                    limit.LimitType, limit.LimitMinutes,
+                    u?.TotalSecondsToday ?? 0, blocked,
+                    limit.LimitType == AppLimitType.Interval ? u?.CurrentIntervalSecondsUsed : null,
+                    limit.LimitType == AppLimitType.Interval ? limit.IntervalMinutes : null,
+                    limit.LimitType == AppLimitType.Interval
+                        ? ComputeIntervalResetsAt(now, limit)
+                        : null);
+            }).ToList()
+            : new List<AppUsageStatus>();
 
         var dailyRules = _config.DailyLimits;
-        bool enabled = dailyRules.Count > 0;
-        var display = ScreenTimeScheduleHelper.ResolveDailyLimitDisplay(dailyRules, now);
+        bool enabled = _sessionActive && dailyRules.Count > 0;
+        var display = enabled
+            ? ScreenTimeScheduleHelper.ResolveDailyLimitDisplay(dailyRules, now)
+            : new DailyLimitDisplayContext(null, false, false, false, null);
         var focusRule = display.FocusRule;
         bool scheduleActive = display.IsActiveNow;
         var usage = focusRule is not null ? GetOrCreateDailyUsage(focusRule.Id) : null;
 
         int dailyMinutes = focusRule?.LimitMinutes ?? 0;
         int totalSeconds = usage?.TotalSecondsUsed ?? 0;
-        bool lockedOut = usage?.IsLockedOut == true && scheduleActive;
+        bool lockedOut = _sessionActive && usage?.IsLockedOut == true && scheduleActive;
+
+        var bedtimeStatus = BuildBedtimeStatus(now);
 
         return new ScreenTimeStatusResponse(
             enabled,
@@ -285,7 +310,45 @@ public sealed class ScreenTimeManager
                 : display.ReferenceTimeLocal ?? ScreenTimeScheduleHelper.GetNextActiveStart(
                     dailyRules.Select(r => r.Schedule), now),
             DailyShowingNextRuleToday: display.IsNextRuleToday,
-            DailyShowingLastEndedRuleToday: display.IsLastEndedRuleToday);
+            DailyShowingLastEndedRuleToday: display.IsLastEndedRuleToday,
+            BedtimesConfigured: bedtimeStatus.Configured,
+            BedtimeActiveNow: bedtimeStatus.ActiveNow,
+            ActiveBedtimeLabel: bedtimeStatus.ActiveLabel,
+            UpcomingBedtimesDuringSession: bedtimeStatus.Upcoming);
+    }
+
+    private readonly record struct BedtimeStatusFields(
+        bool Configured,
+        bool ActiveNow,
+        string? ActiveLabel,
+        List<BedtimeOccurrenceInfo>? Upcoming);
+
+    private BedtimeStatusFields BuildBedtimeStatus(DateTime now)
+    {
+        if (!_sessionActive || _config.Bedtimes.Count == 0)
+            return new BedtimeStatusFields(false, false, null, null);
+
+        var active = BedtimeScheduleHelper.FindActiveBedtime(_config.Bedtimes, now);
+        string? activeLabel = active is not null
+            ? BedtimeScheduleHelper.Describe(active.Schedule)
+            : null;
+
+        List<BedtimeOccurrenceInfo>? upcoming = null;
+        var session = _getSession();
+        if (session?.Status == SessionStatus.Active && session.DeadlineUtc.ToLocalTime() > now)
+        {
+            var deadline = session.DeadlineUtc.ToLocalTime();
+            upcoming = BedtimeScheduleHelper
+                .GetOccurrencesInRange(_config.Bedtimes, now, deadline)
+                .Where(o => o.EndsAtLocal > now)
+                .Select(o => new BedtimeOccurrenceInfo(
+                    BedtimeScheduleHelper.Describe(o.Rule.Schedule),
+                    o.StartsAtLocal,
+                    o.EndsAtLocal))
+                .ToList();
+        }
+
+        return new BedtimeStatusFields(true, active is not null, activeLabel, upcoming);
     }
 
     private static bool HasNonDefaultDailySchedule(DailyTimeLimit rule)
@@ -345,13 +408,17 @@ public sealed class ScreenTimeManager
         {
             _log.LogDebug("User login detected (session {Id}).", snap.SessionId);
             _lockoutNotifiedAt = null;
+            _bedtimeNotifiedAt = null;
         }
         _lastSessionId = snap.UserActive ? snap.SessionId : 0xFFFFFFFF;
+
+        if (_config.Bedtimes.Count > 0)
+            TickBedtime(now, snap.UserActive, snap.SessionId);
 
         if (_config.DailyLimits.Count > 0)
             TickDailyLimit(now, snap.UserActive, snap.SessionId);
 
-        if (_config.AppLimits.Count > 0)
+        if (_config.AppLimits.Count > 0 && snap.RunningExeNames is not null)
             TickAppLimits(now, snap.RunningExeNames, snap.ForegroundExe);
 
         _lastStatusSnapshot = BuildStatusResponse(now);
@@ -361,6 +428,40 @@ public sealed class ScreenTimeManager
             ScreenTimeStateRepository.Save(_state);
             _ticksSinceSave = 0;
             _stateDirty = false;
+        }
+    }
+
+    private void TickBedtime(DateTime now, bool userActive, uint sessionId)
+    {
+        var activeBedtime = BedtimeScheduleHelper.FindActiveBedtime(_config.Bedtimes, now);
+        if (activeBedtime is null)
+        {
+            _bedtimeNotifiedAt = null;
+            return;
+        }
+
+        if (!userActive)
+            return;
+
+        if (_bedtimeNotifiedAt == null)
+        {
+            _bedtimeNotifiedAt = now;
+            _log.LogInformation("Bedtime active ({Schedule}); scheduling sign-out.",
+                BedtimeScheduleHelper.Describe(activeBedtime.Schedule));
+            try
+            {
+                _notifier.ShowMessage(
+                    "Focus Lock — Bedtime",
+                    "Bedtime is active. You will be signed out momentarily.");
+            }
+            catch (Exception ex) { _log.LogDebug(ex, "Failed to show bedtime notification."); }
+        }
+        else if ((now - _bedtimeNotifiedAt.Value).TotalSeconds >= 5)
+        {
+            WTSDisconnectSession(IntPtr.Zero, sessionId, false);
+            _log.LogInformation("Disconnected session {Id} (bedtime).", sessionId);
+            _lastSessionId = 0xFFFFFFFF;
+            _bedtimeNotifiedAt = null;
         }
     }
 

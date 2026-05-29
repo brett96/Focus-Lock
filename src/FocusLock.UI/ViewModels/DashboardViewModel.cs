@@ -48,6 +48,15 @@ public partial class DashboardViewModel : ObservableObject
     private bool _hasAppLimits;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasScreenTime))]
+    private bool _showBedtimesDuringSession;
+
+    [ObservableProperty] private bool _bedtimeActiveNow;
+    [ObservableProperty] private string _activeBedtimeLabel = string.Empty;
+
+    public ObservableCollection<BedtimeOccurrenceDisplayItem> UpcomingBedtimes { get; } = new();
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEndEarly))]
     [NotifyPropertyChangedFor(nameof(ShowNewSessionButton))]
     [NotifyPropertyChangedFor(nameof(ShowActiveSession))]
@@ -66,7 +75,7 @@ public partial class DashboardViewModel : ObservableObject
     public bool ShowActiveSession => IsActive && !IsEndingSession;
     public bool IsServiceUnreachable => !IsServiceReachable;
     public bool HasSessionBlocks => BlockedApps.Count > 0 || BlockedSites.Count > 0;
-    public bool HasScreenTime => ShowDailyLimit || HasAppLimits;
+    public bool HasScreenTime => ShowDailyLimit || HasAppLimits || ShowBedtimesDuringSession;
     public string ModeLabel => SessionMode == SessionMode.Strict ? "STRICT MODE" : "REGULAR MODE";
     public string ModeColor => SessionMode == SessionMode.Strict ? "#F38BA8" : "#89B4FA";
 
@@ -286,6 +295,33 @@ public partial class DashboardViewModel : ObservableObject
                 AppUsages.RemoveAt(i);
             }
         }
+
+        var upcoming = status.UpcomingBedtimesDuringSession ?? new List<BedtimeOccurrenceInfo>();
+        BedtimeActiveNow   = status.BedtimeActiveNow;
+        ActiveBedtimeLabel = status.ActiveBedtimeLabel ?? string.Empty;
+
+        UpcomingBedtimes.Clear();
+        foreach (var item in upcoming)
+        {
+            if (item.StartsAtLocal <= DateTime.Now && item.EndsAtLocal > DateTime.Now)
+                continue;
+
+            UpcomingBedtimes.Add(new BedtimeOccurrenceDisplayItem
+            {
+                ScheduleLabel = item.ScheduleLabel,
+                WindowText    = FormatBedtimeWindow(item.StartsAtLocal, item.EndsAtLocal)
+            });
+        }
+
+        ShowBedtimesDuringSession = status.BedtimesConfigured &&
+            (status.BedtimeActiveNow || UpcomingBedtimes.Count > 0);
+    }
+
+    private static string FormatBedtimeWindow(DateTime start, DateTime end)
+    {
+        if (start.Date == end.Date)
+            return $"{start:ddd, h:mm tt} – {end:h:mm tt}";
+        return $"{start:ddd, h:mm tt} – {end:ddd, h:mm tt}";
     }
 
     private void MarkServiceReachable()
@@ -319,6 +355,10 @@ public partial class DashboardViewModel : ObservableObject
         DailyScheduleStatusText          = string.Empty;
         DailyHasCustomSchedule           = false;
         DailyScheduleWindowEndedForToday = false;
+        ShowBedtimesDuringSession        = false;
+        BedtimeActiveNow                 = false;
+        ActiveBedtimeLabel               = string.Empty;
+        UpcomingBedtimes.Clear();
         AppUsages.Clear();
         _appUsageByExe.Clear();
         OnPropertyChanged(nameof(HasScreenTime));

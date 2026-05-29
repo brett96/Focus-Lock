@@ -25,6 +25,150 @@ public static class ScreenTimeScheduleOverlap
             && b.StartTime!.Value < a.EndTime!.Value;
     }
 
+    public static bool TryFindBedtimeOverlap(
+        IReadOnlyList<BedtimeRule> rules,
+        ScreenTimeSchedule candidate,
+        out string? message,
+        string? excludeId = null)
+    {
+        foreach (var rule in rules)
+        {
+            if (excludeId is not null && rule.Id == excludeId)
+                continue;
+
+            if (!BedtimeScheduleHelper.SchedulesConflict(candidate, rule.Schedule))
+                continue;
+
+            message = $"This schedule overlaps with an existing bedtime ({DescribeBedtime(rule)}).";
+            return true;
+        }
+
+        message = null;
+        return false;
+    }
+
+    public static bool TryFindBedtimeLimitConflict(
+        IReadOnlyList<BedtimeRule> bedtimes,
+        ScreenTimeSchedule candidate,
+        IReadOnlyList<DailyTimeLimit> dailyLimits,
+        IReadOnlyList<AppTimeLimit> appLimits,
+        out string? message,
+        string? excludeBedtimeId = null)
+    {
+        foreach (var rule in dailyLimits)
+        {
+            if (!BedtimeScheduleHelper.SchedulesConflict(candidate, rule.Schedule))
+                continue;
+
+            message = $"This schedule overlaps with daily limit {DescribeRule(rule)}.";
+            return true;
+        }
+
+        foreach (var rule in appLimits)
+        {
+            var existing = rule.Schedule ?? ScreenTimeSchedule.Always;
+            if (!BedtimeScheduleHelper.SchedulesConflict(candidate, existing))
+                continue;
+
+            message = $"This schedule overlaps with app limit for {rule.DisplayName} ({DescribeAppRule(rule)}).";
+            return true;
+        }
+
+        return TryFindBedtimeOverlap(bedtimes, candidate, out message, excludeBedtimeId);
+    }
+
+    public static bool TryFindDailyLimitBedtimeConflict(
+        IReadOnlyList<BedtimeRule> bedtimes,
+        ScreenTimeSchedule candidate,
+        IReadOnlyList<DailyTimeLimit> dailyLimits,
+        out string? message,
+        string? excludeDailyId = null)
+    {
+        foreach (var bedtime in bedtimes)
+        {
+            if (!BedtimeScheduleHelper.SchedulesConflict(candidate, bedtime.Schedule))
+                continue;
+
+            message = $"This schedule overlaps with bedtime {DescribeBedtime(bedtime)}.";
+            return true;
+        }
+
+        return TryFindDailyLimitOverlap(dailyLimits, candidate, out message, excludeDailyId);
+    }
+
+    public static bool TryFindAppLimitBedtimeConflict(
+        IReadOnlyList<BedtimeRule> bedtimes,
+        string exeName,
+        ScreenTimeSchedule candidate,
+        IReadOnlyList<AppTimeLimit> appLimits,
+        out string? message,
+        string? excludeAppId = null)
+    {
+        foreach (var bedtime in bedtimes)
+        {
+            if (!BedtimeScheduleHelper.SchedulesConflict(candidate, bedtime.Schedule))
+                continue;
+
+            message = $"This schedule overlaps with bedtime {DescribeBedtime(bedtime)}.";
+            return true;
+        }
+
+        return TryFindAppLimitOverlap(appLimits, exeName, candidate, out message, excludeAppId);
+    }
+
+    public static bool HasInternalBedtimeOverlap(IReadOnlyList<BedtimeRule> rules, out string? message)
+    {
+        for (int i = 0; i < rules.Count; i++)
+        {
+            for (int j = i + 1; j < rules.Count; j++)
+            {
+                if (!BedtimeScheduleHelper.SchedulesConflict(rules[i].Schedule, rules[j].Schedule))
+                    continue;
+
+                message = $"Bedtimes overlap: {DescribeBedtime(rules[i])} and {DescribeBedtime(rules[j])}.";
+                return true;
+            }
+        }
+
+        message = null;
+        return false;
+    }
+
+    public static bool HasBedtimeLimitConflicts(
+        IReadOnlyList<BedtimeRule> bedtimes,
+        IReadOnlyList<DailyTimeLimit> dailyLimits,
+        IReadOnlyList<AppTimeLimit> appLimits,
+        out string? message)
+    {
+        if (HasInternalBedtimeOverlap(bedtimes, out message))
+            return true;
+
+        foreach (var bedtime in bedtimes)
+        {
+            foreach (var daily in dailyLimits)
+            {
+                if (!BedtimeScheduleHelper.SchedulesConflict(bedtime.Schedule, daily.Schedule))
+                    continue;
+
+                message = $"Bedtime {DescribeBedtime(bedtime)} overlaps with daily limit {DescribeRule(daily)}.";
+                return true;
+            }
+
+            foreach (var app in appLimits)
+            {
+                var schedule = app.Schedule ?? ScreenTimeSchedule.Always;
+                if (!BedtimeScheduleHelper.SchedulesConflict(bedtime.Schedule, schedule))
+                    continue;
+
+                message = $"Bedtime {DescribeBedtime(bedtime)} overlaps with app limit for {app.DisplayName}.";
+                return true;
+            }
+        }
+
+        message = null;
+        return false;
+    }
+
     public static bool TryFindDailyLimitOverlap(
         IReadOnlyList<DailyTimeLimit> rules,
         ScreenTimeSchedule candidate,
@@ -113,6 +257,9 @@ public static class ScreenTimeScheduleOverlap
         message = null;
         return false;
     }
+
+    private static string DescribeBedtime(BedtimeRule rule)
+        => BedtimeScheduleHelper.Describe(rule.Schedule);
 
     private static string DescribeRule(DailyTimeLimit rule)
         => $"{FormatMinutes(rule.LimitMinutes)}, {ScreenTimeScheduleHelper.Describe(rule.Schedule)}";
