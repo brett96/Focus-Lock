@@ -1,4 +1,5 @@
-using FocusLock.Service;
+using FocusLock.Core.Services;
+using FocusLock.Watchdog;
 using Microsoft.Extensions.Hosting.WindowsServices;
 
 var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
@@ -9,20 +10,15 @@ var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
         : Directory.GetCurrentDirectory()
 });
 
-builder.Services.AddWindowsService(o => o.ServiceName = "FocusLockService");
-builder.Services.AddSingleton<SessionManager>();
-builder.Services.AddHostedService<SessionWorker>();
-builder.Services.AddHostedService<AppMonitorWorker>();
-builder.Services.AddHostedService<DeadlineWatcherWorker>();
-builder.Services.AddHostedService<SessionWatchdogWorker>();
+builder.Services.AddWindowsService(o => o.ServiceName = FocusLockServiceNames.WatchdogService);
+builder.Services.AddHostedService<WatchdogWorker>();
 
-// Log to Windows Event Log when running as a service; fall back to console during development.
 if (WindowsServiceHelpers.IsWindowsService())
 {
     builder.Logging.ClearProviders();
     builder.Logging.AddEventLog(cfg =>
     {
-        cfg.SourceName = "FocusLock";
+        cfg.SourceName = "FocusLockWatchdog";
         cfg.LogName = "Application";
     });
 }

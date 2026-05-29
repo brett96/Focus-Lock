@@ -20,7 +20,7 @@ public class SessionManager
     private readonly SemaphoreSlim _sessionLock = new(1, 1);
     private readonly AppBlocker _appBlocker;
     private readonly WebsiteBlocker _websiteBlocker;
-    private readonly StrictModeManager _strictMode;
+    private readonly SessionProtectionManager _sessionProtection;
     private readonly BlockPageServer _blockPageServer;
     private readonly ScreenTimeManager _screenTime;
     private bool _initialized;
@@ -36,7 +36,7 @@ public class SessionManager
         _log = log;
         _appBlocker      = new AppBlocker(log);
         _websiteBlocker  = new WebsiteBlocker(log);
-        _strictMode      = new StrictModeManager(log);
+        _sessionProtection = new SessionProtectionManager(log);
         _blockPageServer = new BlockPageServer(log, new SessionNotifier(log));
         _screenTime      = new ScreenTimeManager(log, _appBlocker, () => _session);
     }
@@ -87,9 +87,10 @@ public class SessionManager
         _websiteBlocker.Apply(_session);
         _blockPageServer.Start(_session);
 
+        _sessionProtection.Activate(_session);
+
         if (_session.Mode == SessionMode.Strict)
         {
-            _strictMode.Activate(_session);
             _appBlocker.LockIfeoAcls(_session);
             _websiteBlocker.LockHostsAcl(_session);
         }
@@ -158,11 +159,9 @@ public class SessionManager
                 BlockedSites = req.Sites
             };
 
-            if (req.Mode == SessionMode.Strict)
-            {
-                var strictResult = _strictMode.Activate(session);
-                if (!strictResult.Success) return strictResult;
-            }
+            var protectionResult = _sessionProtection.Activate(session);
+            if (!protectionResult.Success)
+                return protectionResult;
 
             _appBlocker.Apply(session);
             _websiteBlocker.Apply(session);
@@ -275,8 +274,7 @@ public class SessionManager
         _websiteBlocker.Remove(session);
         _blockPageServer.Stop();
 
-        if (session.Mode == SessionMode.Strict)
-            _strictMode.Deactivate(session);
+        _sessionProtection.Deactivate(session);
 
         session.Status = SessionStatus.Idle;
         SessionRepository.Save(null);

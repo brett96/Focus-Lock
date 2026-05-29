@@ -16,12 +16,12 @@ Focus Lock is a **Windows self-focus assistant app**: you start a timed “focus
   - A lightweight HTTP server runs on port 80 for the duration of the session. When a blocked site is visited over **HTTP**, the browser shows a styled block page and a **Windows toast** is shown via `BlockerStub` (debounced ~5 seconds per domain). **HTTPS** visits are still blocked via the hosts file but cannot show the block page or toast without TLS interception.
 - **Session enforcement**
   - Sessions are persisted to `C:\ProgramData\FocusLock\session.json` so the service can **recover after restart/crash** and keep enforcing until the deadline.
+  - **Service protection** (regular and strict sessions): at session start, both `FocusLockService` and `FocusLockWatchdog` get SCM DACLs that deny stop, pause, and reconfiguration to **Administrators and LocalSystem** (blocks `sc stop` and services.msc even from a PsExec SYSTEM prompt). Poll loops re-apply DACLs if tampered. Both processes are marked **critical** — forcibly killing them can bugcheck Windows. Each service polls every ~1.5s and restarts the other if killed.
 - **Strict mode**
   - Locks the session so it **cannot be ended early**. Before starting, the UI shows a warning panel and requires the user to check an explicit consent checkbox.
-  - Three layers of enforcement are applied at session start and removed automatically on deadline:
-    1. **Service DACL** — the service modifies its own Windows security descriptor to deny `SERVICE_STOP` and `SERVICE_PAUSE_CONTINUE` to `BUILTIN\Administrators`. `NT AUTHORITY\SYSTEM` (LocalSystem) is a distinct SID and is unaffected, so the service still stops cleanly on system shutdown and restarts normally.
-    2. **IFEO registry ACLs** — each Image File Execution Options key written for the session gets a deny-write ACL for `Administrators`, preventing manual deletion or modification. The service (running as LocalSystem) can still repair keys via the monitor loop.
-    3. **Hosts file ACL** — the hosts file gets a deny-write ACL for `Administrators`, preventing the sentinel block from being manually removed. The service retains full control so it can restore the file on session end.
+  - Adds two more layers on top of service protection:
+    1. **IFEO registry ACLs** — each Image File Execution Options key written for the session gets a deny-write ACL for `Administrators`, preventing manual deletion or modification. The service (running as LocalSystem) can still repair keys via the monitor loop.
+    2. **Hosts file ACL** — the hosts file gets a deny-write ACL for `Administrators`, preventing the sentinel block from being manually removed. The service retains full control so it can restore the file on session end.
   - The user keeps their admin rights for all other purposes — no risk of being locked out of their own machine.
 - **Screen Time Limits** *(optional; enforced only during an active Focus Lock session)*
   - Limits are configured in the **New Focus Session** wizard or on the **Screen Time** settings page (saved ahead of time) and **only apply while a focus session is running** — same lifecycle as app/website blocking. When the session ends, counters reset and enforcement stops.
@@ -75,6 +75,7 @@ FocusLock.sln
 src/
   FocusLock.Core/         Shared models, IPC protocol, persistence helpers
   FocusLock.Service/      Windows Service (runs as LocalSystem)
+  FocusLock.Watchdog/     Session watchdog service (runs as LocalSystem)
   FocusLock.UI/           WPF app (requires admin to run meaningfully)
   FocusLock.BlockerStub/  Small WinForms exe invoked by IFEO
 installer/
@@ -193,9 +194,9 @@ dotnet test --filter "FullyQualifiedName~MyTestName"
 .\build\build.ps1
 ```
 
-`build.ps1` does three things in order:
-1. Publishes `FocusLock.UI`, `FocusLock.BlockerStub`, and `FocusLock.Service` to `publish\FocusLock\`
-2. Moves `FocusLock.Service.exe` to `publish\service-exe\` (required so WiX can attach `ServiceInstall` without a glob conflict)
+`build.ps1` publishes four executables, then builds the MSI:
+1. Publishes `FocusLock.UI`, `FocusLock.BlockerStub`, `FocusLock.Service`, and `FocusLock.Watchdog` to `publish\FocusLock\`
+2. Moves `FocusLock.Service.exe` to `publish\service-exe\` and `FocusLock.Watchdog.exe` to `publish\watchdog-exe\` (required so WiX can attach `ServiceInstall` without a glob conflict)
 3. Builds the WiX installer → `installer\FocusLock.Installer\bin\Release\Focus Lock.msi`
 4. **Code-signs** published executables and the MSI when `signtool` and a signing cert are available (`build.ps1` creates/trusts a dev self-signed cert). The MSI is signed with `/d "Focus Lock"` so the UAC prompt shows that name instead of a random cached filename under `C:\Windows\Installer\`.
 

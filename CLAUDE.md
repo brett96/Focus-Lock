@@ -10,7 +10,7 @@ dotnet test                          # run all tests
 dotnet test --filter "FullyQualifiedName~TestName"  # single test
 
 # Full release build → produces Focus Lock.msi
-.\build\build.ps1                    # publishes all three apps then builds the installer
+.\build\build.ps1                    # publishes all apps + watchdog then builds the installer
 .\build\build.ps1 -Configuration Debug
 
 # Quick source-only build (no installer)
@@ -22,8 +22,8 @@ The UI and Service require Windows and admin rights to run meaningfully. The Ser
 ## Installer
 
 `build/build.ps1` orchestrates the full pipeline:
-1. Publishes UI + BlockerStub + Service to `publish/FocusLock/`
-2. Moves `FocusLock.Service.exe` to `publish/service-exe/` (required so WiX can attach `ServiceInstall` without a glob conflict)
+1. Publishes UI + BlockerStub + Service + Watchdog to `publish/FocusLock/`
+2. Moves `FocusLock.Service.exe` to `publish/service-exe/` and `FocusLock.Watchdog.exe` to `publish/watchdog-exe/`
 3. Builds `installer/FocusLock.Installer/` → `Focus Lock.msi` (`OutputName`: `Focus Lock`)
 4. Signs published binaries + MSI when `signtool` is available; MSI uses `/d "Focus Lock"` for the UAC-friendly description (unsigned MSIs still show random `C:\Windows\Installer\` names)
 
@@ -57,6 +57,7 @@ Focus Lock is a Windows self-parental-control app: users lock themselves out of 
 FocusLock.sln
 ├── src/FocusLock.Core/          net9.0-windows — shared models, IPC protocol, storage
 ├── src/FocusLock.Service/       net9.0-windows — Windows Service (runs as SYSTEM)
+├── src/FocusLock.Watchdog/      net9.0-windows — strict-mode watchdog service (runs as SYSTEM)
 ├── src/FocusLock.UI/            net9.0-windows — WPF app (asInvoker; no UAC for normal use)
 ├── src/FocusLock.BlockerStub/   net9.0-windows — tiny exe called by Windows via IFEO
 ├── installer/FocusLock.Installer/  WiX v4 — produces Focus Lock.msi
@@ -75,7 +76,7 @@ FocusLock.sln
 
 **Website blocking**: Appends a sentinel block to `C:\Windows\System32\drivers\etc\hosts` with `0.0.0.0 domain.com` entries, then calls `ipconfig /flushdns`. On session end, restores from a backup file.
 
-**Strict mode** (`StrictModeManager`): Cannot end session early from the UI. Enforces via (1) service DACL denying `SERVICE_STOP` / `SERVICE_PAUSE_CONTINUE` to Administrators, (2) deny-write ACLs on IFEO keys, (3) deny-write ACL on the hosts file. Does **not** create/demote local admin accounts.
+**Session protection** (`SessionProtectionManager` + `FocusLockWatchdog`): Active for **all** sessions (regular and strict). (1) Service DACLs on both services deny `SERVICE_STOP`, pause, and change-config to **Administrators and LocalSystem**; poll loops re-apply if tampered. (2) Both service processes are marked **critical** (`BreakOnTermination`) — killing them can bugcheck the OS. (3) **Mutual watchdog** restarts the other service if one dies. **Strict mode** additionally: cannot end early from UI; deny-write ACLs on IFEO keys and hosts file. Skilled attackers with kernel/debugger access can still bypass critical-process and DACL defenses.
 
 ### Key files
 
@@ -91,7 +92,11 @@ FocusLock.sln
 | `src/FocusLock.Service/DeadlineWatcherWorker.cs` | Ends session when deadline is reached |
 | `src/FocusLock.Service/Blocking/AppBlocker.cs` | IFEO writes, process kill, IFEO repair |
 | `src/FocusLock.Service/Blocking/WebsiteBlocker.cs` | Hosts file management |
-| `src/FocusLock.Service/Blocking/StrictModeManager.cs` | Admin account lifecycle (highest-risk code) |
+| `src/FocusLock.Service/Blocking/SessionProtectionManager.cs` | Session DACLs, critical process, watchdog start/stop |
+| `src/FocusLock.Core/Services/ServiceDaclManager.cs` | SCM DACL deny for Administrators + LocalSystem |
+| `src/FocusLock.Core/Services/ProcessProtection.cs` | Critical-process (BreakOnTermination) flag |
+| `src/FocusLock.Watchdog/WatchdogWorker.cs` | Restarts main service during any active session |
+| `src/FocusLock.Service/SessionWatchdogWorker.cs` | Restarts watchdog during any active session |
 | `src/FocusLock.Core/Blocking/SystemProcessList.cs` | Shared exclusion list — processes that must never be blocked |
 | `src/FocusLock.Core/Blocking/WebsiteCategories.cs` | Preset domain lists for category blocking on setup |
 | `src/FocusLock.UI/Services/SessionStartConfirmationDialog.cs` | Start-session Yes/No summary dialog (deadline, mode, restrictions) |
@@ -121,8 +126,8 @@ Types: `GetStatus`, `GetSessionInfo`, `StartSession`, `EndSession`, `IsBlocked`,
 
 ### Two session modes
 
-- **Regular**: User can end the session early from the dashboard (with confirmation). Admins can still stop the service via SCM (acceptable tradeoff).
-- **Strict**: Session runs until deadline; UI hides End Session Early. Service/IFEO/hosts ACLs prevent tampering; see `StrictModeManager`.
+- **Regular**: User can end the session early from the dashboard (with confirmation). Service/watchdog DACLs, critical process, and mutual watchdog still apply until end.
+- **Strict**: Session runs until deadline; UI hides End Session Early. Adds IFEO/hosts deny-write ACLs on top of session protection.
 
 ### Session start rules (UI + service)
 

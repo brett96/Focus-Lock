@@ -108,10 +108,48 @@
             ResetPeriodInDays="1" />
         </Component>
 
+        <!-- Watchdog: demand-start; SessionProtectionManager starts it during active sessions. -->
+        <Component Id="WatchdogExeComponent" Guid="A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A06">
+          <File Id="WatchdogExe" Name="FocusLock.Watchdog.exe"
+                Source="..\..\publish\watchdog-exe\FocusLock.Watchdog.exe" KeyPath="yes" />
+
+          <ServiceInstall Id="FocusLockWatchdogInstall"
+                         Name="FocusLockWatchdog"
+                         DisplayName="Focus Lock Watchdog"
+                         Description="Restarts Focus Lock Service during strict-mode sessions if it is stopped."
+                         Type="ownProcess"
+                         Start="demand"
+                         ErrorControl="normal"
+                         Account="LocalSystem"
+                         Interactive="no"
+                         Vital="yes" />
+
+          <ServiceControl Id="FocusLockWatchdogControl"
+                         Name="FocusLockWatchdog"
+                         Stop="both"
+                         Remove="uninstall"
+                         Wait="yes" />
+
+          <util:ServiceConfig
+            ServiceName="FocusLockWatchdog"
+            FirstFailureActionType="restart"
+            SecondFailureActionType="restart"
+            ThirdFailureActionType="restart"
+            RestartServiceDelayInSeconds="15"
+            ResetPeriodInDays="1" />
+        </Component>
+
         <!-- Allow the service to start in Windows Safe Mode (Minimal). -->
         <Component Id="SafeBootRegistry" Guid="A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A02">
           <RegistryKey Root="HKLM"
                       Key="SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\FocusLockService">
+            <RegistryValue Type="string" Value="Service" KeyPath="yes" />
+          </RegistryKey>
+        </Component>
+
+        <Component Id="WatchdogSafeBootRegistry" Guid="A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A07">
+          <RegistryKey Root="HKLM"
+                      Key="SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\FocusLockWatchdog">
             <RegistryValue Type="string" Value="Service" KeyPath="yes" />
           </RegistryKey>
         </Component>
@@ -122,6 +160,15 @@
                       Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\FocusLock">
             <RegistryValue Type="string" Name="EventMessageFile"
                           Value="[INSTALLFOLDER]FocusLock.Service.exe" KeyPath="yes" />
+            <RegistryValue Type="integer" Name="TypesSupported" Value="7" />
+          </RegistryKey>
+        </Component>
+
+        <Component Id="WatchdogEventLogSource" Guid="A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A08">
+          <RegistryKey Root="HKLM"
+                      Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\FocusLockWatchdog">
+            <RegistryValue Type="string" Name="EventMessageFile"
+                          Value="[INSTALLFOLDER]FocusLock.Watchdog.exe" KeyPath="yes" />
             <RegistryValue Type="integer" Name="TypesSupported" Value="7" />
           </RegistryKey>
         </Component>
@@ -159,8 +206,11 @@
     <Feature Id="ProductFeature" Title="Focus Lock" Level="1">
       <ComponentGroupRef Id="AppFiles" />
       <ComponentRef Id="ServiceExeComponent" />
+      <ComponentRef Id="WatchdogExeComponent" />
       <ComponentRef Id="SafeBootRegistry" />
+      <ComponentRef Id="WatchdogSafeBootRegistry" />
       <ComponentRef Id="EventLogSource" />
+      <ComponentRef Id="WatchdogEventLogSource" />
       <ComponentRef Id="DataDirectory" />
       <ComponentRef Id="StartMenuShortcut" />
     </Feature>

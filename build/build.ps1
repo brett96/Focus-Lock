@@ -16,6 +16,7 @@ $ErrorActionPreference = "Stop"
 $root       = Resolve-Path "$PSScriptRoot\.."
 $publishAll = Join-Path $root "publish\FocusLock"
 $publishSvc = Join-Path $root "publish\service-exe"
+$publishWatchdog = Join-Path $root "publish\watchdog-exe"
 
 function Step([string]$msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Ok([string]$msg)   { Write-Host "    $msg" -ForegroundColor Green }
@@ -23,7 +24,7 @@ function Fail([string]$msg) { Write-Host "    ERROR: $msg" -ForegroundColor Red;
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 Step "Cleaning publish directories"
-foreach ($dir in @($publishAll, $publishSvc)) {
+foreach ($dir in @($publishAll, $publishSvc, $publishWatchdog)) {
     if (Test-Path $dir) { Remove-Item $dir -Recurse -Force -Confirm:$false }
 }
 Ok "Clean done."
@@ -43,6 +44,11 @@ Step "Publishing FocusLock.Service"
 dotnet publish "$root\src\FocusLock.Service" -c $Configuration -o $publishAll --nologo
 if ($LASTEXITCODE -ne 0) { Fail "FocusLock.Service publish failed." }
 Ok "FocusLock.Service published."
+
+Step "Publishing FocusLock.Watchdog"
+dotnet publish "$root\src\FocusLock.Watchdog" -c $Configuration -o $publishAll --nologo
+if ($LASTEXITCODE -ne 0) { Fail "FocusLock.Watchdog publish failed." }
+Ok "FocusLock.Watchdog published."
 
 # ── Code signing setup ───────────────────────────────────────────────────────
 Step "Setting up code signing"
@@ -116,6 +122,11 @@ Step "Isolating FocusLock.Service.exe for installer"
 New-Item -ItemType Directory -Path $publishSvc -Force | Out-Null
 Move-Item "$publishAll\FocusLock.Service.exe" "$publishSvc\FocusLock.Service.exe" -Force
 Ok "FocusLock.Service.exe moved to publish\service-exe\."
+
+Step "Isolating FocusLock.Watchdog.exe for installer"
+New-Item -ItemType Directory -Path $publishWatchdog -Force | Out-Null
+Move-Item "$publishAll\FocusLock.Watchdog.exe" "$publishWatchdog\FocusLock.Watchdog.exe" -Force
+Ok "FocusLock.Watchdog.exe moved to publish\watchdog-exe\."
 
 # ── Build installer ───────────────────────────────────────────────────────────
 Step "Building WiX installer"

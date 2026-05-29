@@ -32,6 +32,7 @@ public static class SystemProcessList
 
         // Focus Lock
         "FocusLock.Service.exe", "FocusLock.UI.exe", "FocusLock.BlockerStub.exe",
+        "FocusLock.Watchdog.exe",
     };
 
     private static readonly string[] ProtectedDirectoryPrefixes = BuildProtectedDirectoryPrefixes();
