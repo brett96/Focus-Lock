@@ -186,6 +186,21 @@ public class AppBlocker(ILogger log)
             RemoveScreenTimeBlock(exe, session);
     }
 
+    /// <summary>
+    /// Ensures IFEO matches current screen-time block state (apply missing, remove stale).
+    /// </summary>
+    public void SyncScreenTimeBlocks(IReadOnlySet<string> blockedExes, FocusSession? session)
+    {
+        foreach (var exe in _screenTimeIfeoKeys.ToList())
+        {
+            if (!blockedExes.Contains(exe))
+                RemoveScreenTimeBlock(exe, session);
+        }
+
+        foreach (var exe in blockedExes)
+            ApplyScreenTimeBlock(exe, session);
+    }
+
     public void RemoveAllStubIfeoKeys()
     {
         try

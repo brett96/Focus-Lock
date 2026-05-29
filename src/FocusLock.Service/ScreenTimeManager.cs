@@ -240,8 +240,7 @@ public sealed class ScreenTimeManager
                 blockedExes.Add(limit.ExeName);
         }
 
-        foreach (var exe in blockedExes)
-            _appBlocker.ApplyScreenTimeBlock(exe, session);
+        _appBlocker.SyncScreenTimeBlocks(blockedExes, session);
     }
 
     public ScreenTimeStatusResponse HandleGetStatus()
@@ -717,7 +716,20 @@ public sealed class ScreenTimeManager
     private void TickIntervalApp(AppTimeLimit limit, AppUsageEntry usage,
         bool appRunning, bool scheduleActive, DateTime now, ScreenTimeSchedule schedule)
     {
-        if (!scheduleActive) return;
+        if (!scheduleActive)
+        {
+            if (usage.IsBlockedInCurrentInterval || usage.CurrentIntervalIndex != -1)
+            {
+                usage.IsBlockedInCurrentInterval = false;
+                usage.CurrentIntervalIndex = -1;
+                usage.CurrentIntervalSecondsUsed = 0;
+                usage.Warned5Min = false;
+                usage.Warned1Min = false;
+                _stateDirty = true;
+                TryRemoveScreenTimeBlock(limit.ExeName);
+            }
+            return;
+        }
 
         var anchor = schedule.StartTime?.ToTimeSpan() ?? TimeSpan.Zero;
         var scheduleStartToday = now.Date + anchor;
@@ -728,14 +740,15 @@ public sealed class ScreenTimeManager
 
         if (usage.CurrentIntervalIndex != intervalIndex)
         {
-            if (usage.IsBlockedInCurrentInterval)
-                TryRemoveScreenTimeBlock(limit.ExeName);
+            var wasBlocked = usage.IsBlockedInCurrentInterval;
             usage.CurrentIntervalIndex = intervalIndex;
             usage.CurrentIntervalSecondsUsed = 0;
             usage.IsBlockedInCurrentInterval = false;
             usage.Warned5Min = false;
             usage.Warned1Min = false;
             _stateDirty = true;
+            if (wasBlocked)
+                TryRemoveScreenTimeBlock(limit.ExeName);
         }
 
         if (appRunning)
