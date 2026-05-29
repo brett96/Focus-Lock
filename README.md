@@ -244,7 +244,7 @@ User data in `C:\ProgramData\FocusLock\` is preserved (session/screen-time confi
 
 ### Uninstall and upgrade vs. active sessions
 
-Before stopping services, the MSI runs `FocusLock.Service.exe --unlock-for-setup` (custom action, `Return="check"`).
+Before stopping services (or before removing the old product on upgrade), the MSI runs **`sc.exe sdset`** via WiX `WixQuietExec` to reset service DACLs (no embedded .NET executable in the MSI). Manual unlock: `FocusLock.SetupHelper.exe` or `.\scripts\Unlock-StuckServices.ps1`.
 
 | Session state | Uninstall / upgrade |
 |---------------|---------------------|
@@ -259,18 +259,21 @@ If unlock was refused or failed, the installer cannot stop `FocusLockService` (i
 
 If you are stuck on an older build:
 
-1. **Build or copy a current `FocusLock.Service.exe`** (the unlock logic must match the installed service).
-2. Run in **Administrator PowerShell or CMD** (either is fine):
+1. Run in **Administrator PowerShell** (from an install that includes SetupHelper, or from a dev build):
 
 ```powershell
-& "C:\Program Files\FocusLock\FocusLock.Service.exe" --unlock-for-setup
+& "C:\Program Files\FocusLock\FocusLock.SetupHelper.exe" --full
 ```
+
+Or from the repo: `.\scripts\Unlock-StuckServices.ps1` (resets DACLs, runs unlock, disables services until reboot if they are still running).
+
+**If uninstall or upgrade fails with error 1721** (“a program required for this install could not be run”): Windows is running the **old cached MSI** from install time (`C:\Windows\Installer\*.msi`), not a newly built MSI. Focus Lock 1.1.0’s cached package runs `FocusLock.Service.exe --unlock-for-setup`, which fails. Use **`.\scripts\Remove-FocusLock-Manual.ps1`** (Administrator PowerShell), reboot if prompted, then install the current `Focus Lock.msi`. Do not rely on `msiexec /x` or Settings → Uninstall until manual removal has cleared the old registration.
 
 The tool asks the **running service** (over the named pipe) to end a **regular** session and remove protection. It is **refused** during an active **Strict** session (same rule as the MSI).
 
-If you see **Permission denied** and the PC **blue-screens** when the command exits, an older unlock build tried to **stop a process that was still marked critical** — do not run that old command again. Reboot, deploy the updated `FocusLock.Service.exe`, ensure the **Focus Lock Service** is **Running** in `services.msc`, then run `--unlock-for-setup` once more before uninstalling.
+If you see **Permission denied** and the PC **blue-screens** when a command exits, an older unlock build tried to **stop a process that was still marked critical** — do not run legacy `FocusLock.Service.exe --unlock-for-setup` again. Reboot, install a current build, ensure the **Focus Lock Service** is **Running** in `services.msc`, then run `FocusLock.SetupHelper.exe` once more before uninstalling.
 
-If `sc.exe stop FocusLockWatchdog` returns **Access is denied**, the installed service is still an older build and may be re-applying stop-denies. Run `--unlock-for-setup` from a **new build** (project root commands above), or reset DACLs manually **as Administrator**:
+If `sc.exe stop FocusLockWatchdog` returns **Access is denied**, the installed service may still be re-applying stop-denies. Run `FocusLock.SetupHelper.exe` from a **new build**, or reset DACLs manually **as Administrator**:
 
 From the repo root, in **Administrator PowerShell**:
 

@@ -25,6 +25,49 @@ public static class SetupUnlock
 
     public static bool Run() => RunWithDiagnostics().Success;
 
+    /// <summary>
+    /// MSI / setup path: release SCM control and exit 0 unless Strict is active.
+    /// Does not stop services (Windows Installer stops them after this returns).
+    /// </summary>
+    public static (bool Success, string Message) RunForInstaller()
+    {
+        if (ActiveSessionHelper.IsActiveStrictSession())
+        {
+            return (false,
+                "Cannot unlock or uninstall while a Strict mode session is active. Wait for the deadline to pass.");
+        }
+
+        var (ipcOk, ipcMessage) = SetupUnlockClient.TryUnlockRunningService();
+        if (ipcOk)
+            return (true, ipcMessage);
+
+        ReleaseServiceControlForSetup();
+        TryClearCritical(FocusLockServiceNames.WatchdogService, out _);
+        TryClearCritical(FocusLockServiceNames.MainService, out _);
+        return (true, $"Service control released for setup (IPC: {ipcMessage}).");
+    }
+
+    private static void ReleaseServiceControlForSetup()
+    {
+        try
+        {
+            SessionRepository.Save(null);
+            SetupUnlockClient.TryEndSessionViaIpc();
+        }
+        catch
+        {
+            // Best-effort before DACL reset.
+        }
+
+        for (int i = 0; i < 8; i++)
+        {
+            ServiceDaclReset.TryResetToDefault(FocusLockServiceNames.MainService, out _);
+            ServiceDaclReset.TryResetToDefault(FocusLockServiceNames.WatchdogService, out _);
+            SessionProtectionHelper.RestoreServiceProtection();
+            Thread.Sleep(150);
+        }
+    }
+
     private static (bool Success, string Message) RunOfflineUnlock(string ipcMessage)
     {
         if (ActiveSessionHelper.IsActiveStrictSession())

@@ -202,18 +202,38 @@
       </Directory>
     </StandardDirectory>
 
-    <!-- ── Feature tree ─────────────────────────────────────────────────────── -->
-    <!-- Restore service DACLs before StopServices so uninstall/upgrade can stop protected services. -->
-    <CustomAction Id="UnlockFocusLockForSetup"
-                  Directory="INSTALLFOLDER"
-                  ExeCommand="FocusLock.Service.exe --unlock-for-setup"
-                  Execute="deferred"
-                  Impersonate="no"
-                  Return="check" />
+    <!--
+      Release service DACLs via sc.exe (WixQuietExec). No embedded .NET EXE — those often fail with
+      "a program required for this install could not be run". Return=ignore if a service is missing.
+      Two short commands (MSI CustomAction Target column max 255 chars).
+    -->
+    <?define UnlockMainSdset = "&quot;[SystemFolder]sc.exe&quot; sdset FocusLockService D:(A;;GA;;;SY)(A;;GA;;;BA)" ?>
+    <?define UnlockWatchSdset = "&quot;[SystemFolder]sc.exe&quot; sdset FocusLockWatchdog D:(A;;GA;;;SY)(A;;GA;;;BA)" ?>
 
+    <CustomAction Id="SetUnlockMainCmd" Property="WixQuietExecCmdLine" Value="$(var.UnlockMainSdset)" />
+    <CustomAction Id="SetUnlockWatchCmd" Property="WixQuietExecCmdLine" Value="$(var.UnlockWatchSdset)" />
+    <CustomAction Id="RunUnlockMainSc"
+                  BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+                  DllEntry="WixQuietExec"
+                  Execute="immediate"
+                  Impersonate="no"
+                  Return="ignore" />
+    <CustomAction Id="RunUnlockWatchSc"
+                  BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+                  DllEntry="WixQuietExec"
+                  Execute="immediate"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!-- Before RemoveExistingProducts (upgrade) or that sequence slot (uninstall). -->
     <InstallExecuteSequence>
-      <Custom Action="UnlockFocusLockForSetup" Before="StopServices" Condition="Installed" />
+      <Custom Action="SetUnlockMainCmd" Before="RunUnlockMainSc" Condition="Installed" />
+      <Custom Action="RunUnlockMainSc" Before="SetUnlockWatchCmd" Condition="Installed" />
+      <Custom Action="SetUnlockWatchCmd" Before="RunUnlockWatchSc" Condition="Installed" />
+      <Custom Action="RunUnlockWatchSc" Before="RemoveExistingProducts" Condition="Installed" />
     </InstallExecuteSequence>
+
+    <!-- ── Feature tree ─────────────────────────────────────────────────────── -->
 
     <Feature Id="ProductFeature" Title="Focus Lock" Level="1">
       <ComponentGroupRef Id="AppFiles" />

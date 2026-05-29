@@ -23,6 +23,8 @@ Project("{930C7802-8A8C-48F9-8165-68863BCCD9DD}") = "FocusLock.Installer", "inst
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FocusLock.Watchdog", "src\FocusLock.Watchdog\FocusLock.Watchdog.csproj", "{39A2CEFA-3B29-465D-B765-B0871A42D3F4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FocusLock.SetupHelper", "src\FocusLock.SetupHelper\FocusLock.SetupHelper.csproj", "{5E01F995-1172-4FFE-AFC5-34269AC0CC55}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -123,6 +125,18 @@ Global
 		{39A2CEFA-3B29-465D-B765-B0871A42D3F4}.Release|x64.Build.0 = Release|Any CPU
 		{39A2CEFA-3B29-465D-B765-B0871A42D3F4}.Release|x86.ActiveCfg = Release|Any CPU
 		{39A2CEFA-3B29-465D-B765-B0871A42D3F4}.Release|x86.Build.0 = Release|Any CPU
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55}.Debug|x64.Build.0 = Debug|Any CPU
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55}.Debug|x86.Build.0 = Debug|Any CPU
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55}.Release|x64.ActiveCfg = Release|Any CPU
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55}.Release|x64.Build.0 = Release|Any CPU
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55}.Release|x86.ActiveCfg = Release|Any CPU
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -136,5 +150,6 @@ Global
 		{7C806309-8FB8-495E-92F7-55AB0C5AE63B} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{65F352CB-1878-4A08-97B4-7C6BEA22C981} = {1860D2E4-5C43-71D5-59A5-599A4DE1DF67}
 		{39A2CEFA-3B29-465D-B765-B0871A42D3F4} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{5E01F995-1172-4FFE-AFC5-34269AC0CC55} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

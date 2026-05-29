@@ -17,6 +17,7 @@ $root       = Resolve-Path "$PSScriptRoot\.."
 $publishAll = Join-Path $root "publish\FocusLock"
 $publishSvc = Join-Path $root "publish\service-exe"
 $publishWatchdog = Join-Path $root "publish\watchdog-exe"
+$publishSetupCa = Join-Path $root "publish\setup-ca"
 
 function Step([string]$msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Ok([string]$msg)   { Write-Host "    $msg" -ForegroundColor Green }
@@ -24,7 +25,7 @@ function Fail([string]$msg) { Write-Host "    ERROR: $msg" -ForegroundColor Red;
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 Step "Cleaning publish directories"
-foreach ($dir in @($publishAll, $publishSvc, $publishWatchdog)) {
+foreach ($dir in @($publishAll, $publishSvc, $publishWatchdog, $publishSetupCa)) {
     if (Test-Path $dir) { Remove-Item $dir -Recurse -Force -Confirm:$false }
 }
 Ok "Clean done."
@@ -49,6 +50,19 @@ Step "Publishing FocusLock.Watchdog"
 dotnet publish "$root\src\FocusLock.Watchdog" -c $Configuration -o $publishAll --nologo
 if ($LASTEXITCODE -ne 0) { Fail "FocusLock.Watchdog publish failed." }
 Ok "FocusLock.Watchdog published."
+
+Step "Publishing FocusLock.SetupHelper"
+dotnet publish "$root\src\FocusLock.SetupHelper" -c $Configuration -o $publishAll --nologo
+if ($LASTEXITCODE -ne 0) { Fail "FocusLock.SetupHelper publish failed." }
+Ok "FocusLock.SetupHelper published."
+
+Step "Publishing self-contained FocusLock.SetupHelper for MSI unlock custom action"
+New-Item -ItemType Directory -Path $publishSetupCa -Force | Out-Null
+dotnet publish "$root\src\FocusLock.SetupHelper" -c $Configuration -o $publishSetupCa --nologo `
+    -r win-x64 --self-contained true `
+    /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
+if ($LASTEXITCODE -ne 0) { Fail "FocusLock.SetupHelper (setup-ca) publish failed." }
+Ok "FocusLock.SetupHelper (setup-ca) published."
 
 # ── Code signing setup ───────────────────────────────────────────────────────
 Step "Setting up code signing"
