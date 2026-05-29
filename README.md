@@ -1,6 +1,6 @@
 # Focus Lock
 
-**Current version:** 1.1.0
+**Current version:** 1.2.0
 
 Focus Lock is a **Windows self-focus assistant app**: you start a timed “focus session” that **blocks chosen apps and websites until a deadline**. The app is designed so that the **privileged enforcement** happens in a Windows Service running as **LocalSystem**, while the UI is a normal desktop app that talks to the service over IPC.
 
@@ -133,8 +133,8 @@ The canonical version lives in **`Version.props`** at the repository root:
 
 | Property | Example | Used for |
 |----------|---------|----------|
-| `FocusLockVersion` | `1.1.0` | Semver (docs, informational version) |
-| `FocusLockAssemblyVersion` | `1.1.0.0` | Assemblies, file version, MSI `Package/@Version` |
+| `FocusLockVersion` | `1.2.0` | Semver (docs, informational version) |
+| `FocusLockAssemblyVersion` | `1.2.0.0` | Assemblies, file version, MSI `Package/@Version` |
 
 **Semver rules (consistent bumps):**
 

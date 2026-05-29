@@ -155,7 +155,12 @@ public static class InstalledAppsLoader
         var primaryProduct = BlockedAppMatcher.TryGetProductName(primaryPath) ?? displayName;
 
         if (!string.IsNullOrWhiteSpace(installLocation) && Directory.Exists(installLocation))
+        {
+            foreach (var rootExe in AppLauncherDiscovery.CollectRootInstallExes(installLocation))
+                names.Add(rootExe);
+
             ScanInstallFolder(installLocation, displayName, primaryProduct, names, depth: 0);
+        }
 
         return names;
     }
@@ -173,7 +178,10 @@ public static class InstalledAppsLoader
         {
             foreach (var exePath in Directory.EnumerateFiles(directory, "*.exe"))
             {
-                if (SystemProcessList.IsProtectedFromBlocking(Path.GetFileName(exePath), exePath))
+                var fileName = Path.GetFileName(exePath);
+                if (AppLauncherDiscovery.IsUtilityExecutable(fileName))
+                    continue;
+                if (SystemProcessList.IsProtectedFromBlocking(fileName, exePath))
                     continue;
 
                 var product = BlockedAppMatcher.TryGetProductName(exePath);
@@ -203,16 +211,13 @@ public static class InstalledAppsLoader
         string displayName,
         string? installLocation)
     {
-        foreach (var candidate in EnumerateExecutableCandidates(key, displayName, installLocation))
-        {
-            if (!File.Exists(candidate)) continue;
-            if (!candidate.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
-            if (SystemProcessList.IsProtectedFromBlocking(Path.GetFileName(candidate), candidate))
-                continue;
-            return candidate;
-        }
+        var candidates = EnumerateExecutableCandidates(key, displayName, installLocation)
+            .Where(File.Exists)
+            .Where(p => p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            .Where(p => !SystemProcessList.IsProtectedFromBlocking(Path.GetFileName(p), p))
+            .ToList();
 
-        return null;
+        return AppLauncherDiscovery.PickBestLauncher(candidates, displayName, installLocation);
     }
 
     private static IEnumerable<string> EnumerateExecutableCandidates(

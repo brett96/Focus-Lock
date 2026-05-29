@@ -34,12 +34,12 @@ WiX SDK: `WixToolset.Sdk/5.0.2` (pulled via NuGet — no separate WiX install ne
 
 ## Versioning
 
-**Current version:** 1.1.0 (see `Version.props`).
+**Current version:** 1.2.0 (see `Version.props`).
 
 **Bump the version with every user-facing change** before a release build. Edit **`Version.props`** only:
 
-- `FocusLockVersion` — semver `major.minor.patch` (e.g. `1.1.0`)
-- `FocusLockAssemblyVersion` — four-part `major.minor.patch.0` (e.g. `1.1.0.0`)
+- `FocusLockVersion` — semver `major.minor.patch` (e.g. `1.2.0`)
+- `FocusLockAssemblyVersion` — four-part `major.minor.patch.0` (e.g. `1.2.0.0`)
 
 Semver: **PATCH** for fixes, **MINOR** for features (reset patch to `0`), **MAJOR** for breaking changes (reset minor/patch to `0`). Always keep both properties in sync.
 

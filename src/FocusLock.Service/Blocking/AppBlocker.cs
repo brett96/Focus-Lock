@@ -229,7 +229,7 @@ public class AppBlocker(ILogger log)
                 if (SystemProcessList.IsProtectedFromBlocking(exeName))
                     continue;
                 if (seen.Add(exeName))
-                    yield return exeName;
+                    yield return SystemProcessList.NormalizeExeName(exeName);
             }
         }
     }

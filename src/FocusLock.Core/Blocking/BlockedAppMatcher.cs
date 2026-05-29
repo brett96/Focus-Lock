@@ -52,7 +52,27 @@ public static class BlockedAppMatcher
         if (candidateBase.Equals(blockedDisplayName, StringComparison.OrdinalIgnoreCase))
             return true;
 
+        // "steam" matches display name "Steam Client"; "Notepad++" stays distinct from "notepad".
+        if (MatchesFirstSignificantToken(candidateBase, blockedDisplayName))
+            return true;
+
         return false;
+    }
+
+    private static bool MatchesFirstSignificantToken(string candidateBase, string blockedDisplayName)
+    {
+        var blockedToken = GetFirstSignificantToken(blockedDisplayName);
+        if (blockedToken.Length < 3)
+            return false;
+
+        return candidateBase.Equals(blockedToken, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetFirstSignificantToken(string name)
+    {
+        var token = name.Split([' ', '®', '™', '(', ')', '-'], StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(t => t.Length > 0);
+        return token ?? string.Empty;
     }
 
     public static string? TryGetProductName(string exeFullPath)
