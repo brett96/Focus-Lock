@@ -27,7 +27,7 @@ The UI and Service require Windows and admin rights to run meaningfully. The Ser
 3. Builds `installer/FocusLock.Installer/` → `Focus Lock.msi` (`OutputName`: `Focus Lock`)
 4. Signs published binaries + MSI when `signtool` is available; MSI uses `/d "Focus Lock"` for the UAC-friendly description (unsigned MSIs still show random `C:\Windows\Installer\` names)
 
-The installer requires .NET 9 Desktop Runtime on the target machine (enforced via `<Launch>` in Package.wxs).  
+The installer requires .NET Desktop Runtime (x64) 9.0+ on the target machine (`DotNetCompatibilityCheck` with roll-forward in Package.wxs; apps use `RollForward=Major` in Directory.Build.props) and Windows 10 build 17763+.  
 WiX SDK: `WixToolset.Sdk/5.0.2` (pulled via NuGet — no separate WiX install needed).
 
 ## Project Architecture
@@ -38,7 +38,7 @@ Focus Lock is a Windows self-parental-control app: users lock themselves out of 
 FocusLock.sln
 ├── src/FocusLock.Core/          net9.0-windows — shared models, IPC protocol, storage
 ├── src/FocusLock.Service/       net9.0-windows — Windows Service (runs as SYSTEM)
-├── src/FocusLock.UI/            net9.0-windows — WPF app (requireAdministrator UAC)
+├── src/FocusLock.UI/            net9.0-windows — WPF app (asInvoker; no UAC for normal use)
 ├── src/FocusLock.BlockerStub/   net9.0-windows — tiny exe called by Windows via IFEO
 ├── installer/FocusLock.Installer/  WiX v4 — produces Focus Lock.msi
 └── tests/                       xUnit test projects
@@ -145,7 +145,7 @@ Pages: `DashboardPage` (primary idle/active UI), `SetupPage` (wizard), `ActiveSe
 
 **Service reachability UI**: `ServiceClient.SendAsync` retries (`IpcRetryAttempts` / `IpcRetryDelayMs`). Dashboard requires **3** consecutive failed session polls before `IsServiceUnreachable`; a successful `GetStatus` or `GetScreenTimeStatus` clears the streak. Pipe `MaxConnections` = 16 for UI + BlockerStub bursts.
 
-**Named pipe security** (`PipeSecurityHelper`): ACL allows `LocalSystem`, `BuiltinAdministrators`, and `AuthenticatedUser` (for `BlockerStub` / `IsBlocked` as standard user). **No `WorldSid`.** Privileged message types (`StartSession`, `EndSession`, `SetScreenTimeConfig`, `ForceReset`) require an admin token on the client connection (`ImpersonateNamedPipeClient`). IPC reads use a **3s** timeout (`PipeConstants.IpcReadTimeoutSeconds`) to prevent connection-slot exhaustion.
+**Named pipe security** (`PipeSecurityHelper`): ACL allows `LocalSystem` and `InteractiveSid` only (no `WorldSid` / broad `AuthenticatedUser`). `ForceReset` requires an admin client token; other IPC is handled by the service as SYSTEM. IPC reads use a **3s** timeout (`PipeConstants.IpcReadTimeoutSeconds`) to prevent connection-slot exhaustion.
 
 **Screen time warnings**: Service toasts at **5** and **1** minutes remaining for daily total and per-app limits (`MaybeNotifyRemaining`; skip 5‑min warning if limit &lt; 5 minutes).
 

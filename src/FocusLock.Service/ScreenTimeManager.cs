@@ -36,6 +36,9 @@ public sealed class ScreenTimeManager
 
     // Tracks bedtime disconnect notification for the current login.
     private DateTime? _bedtimeNotifiedAt;
+    // Upcoming bedtime warning keys (rule id + occurrence start) — same 5 / 1 minute pattern as screen time.
+    private string? _bedtimeUpcomingWarn5Key;
+    private string? _bedtimeUpcomingWarn1Key;
 
     // Tracks the "lockout notification was sent for this login" moment.
     private DateTime? _lockoutNotifiedAt;
@@ -140,6 +143,8 @@ public sealed class ScreenTimeManager
             _config = req.Config;
             ScreenTimeConfigRepository.Save(_config);
             _bedtimeNotifiedAt = null;
+            _bedtimeUpcomingWarn5Key = null;
+            _bedtimeUpcomingWarn1Key = null;
             _log.LogInformation("Screen time config updated.");
             return new AckResponse(true);
         }
@@ -157,6 +162,8 @@ public sealed class ScreenTimeManager
             _state = new ScreenTimeState { Date = DateOnly.FromDateTime(DateTime.Now) };
             _lockoutNotifiedAt = null;
             _bedtimeNotifiedAt = null;
+            _bedtimeUpcomingWarn5Key = null;
+            _bedtimeUpcomingWarn1Key = null;
             _lastSessionId = 0xFFFFFFFF;
             _stateDirty = true;
             _log.LogInformation("Screen time tracking started for focus session.");
@@ -180,6 +187,8 @@ public sealed class ScreenTimeManager
             _state.DailyRuleUsage.Clear();
             _lockoutNotifiedAt = null;
             _bedtimeNotifiedAt = null;
+            _bedtimeUpcomingWarn5Key = null;
+            _bedtimeUpcomingWarn1Key = null;
             _stateDirty = true;
             _lastStatusSnapshot = null;
             ScreenTimeStateRepository.Save(_state);
@@ -409,11 +418,17 @@ public sealed class ScreenTimeManager
             _log.LogDebug("User login detected (session {Id}).", snap.SessionId);
             _lockoutNotifiedAt = null;
             _bedtimeNotifiedAt = null;
+            _bedtimeUpcomingWarn5Key = null;
+            _bedtimeUpcomingWarn1Key = null;
         }
         _lastSessionId = snap.UserActive ? snap.SessionId : 0xFFFFFFFF;
 
         if (_config.Bedtimes.Count > 0)
+        {
             TickBedtime(now, snap.UserActive, snap.SessionId);
+            if (snap.UserActive)
+                TickBedtimeUpcomingWarnings(now);
+        }
 
         if (_config.DailyLimits.Count > 0)
             TickDailyLimit(now, snap.UserActive, snap.SessionId);
@@ -440,6 +455,9 @@ public sealed class ScreenTimeManager
             return;
         }
 
+        _bedtimeUpcomingWarn5Key = null;
+        _bedtimeUpcomingWarn1Key = null;
+
         if (!userActive)
             return;
 
@@ -464,6 +482,66 @@ public sealed class ScreenTimeManager
             _bedtimeNotifiedAt = null;
         }
     }
+
+    private void TickBedtimeUpcomingWarnings(DateTime now)
+    {
+        if (BedtimeScheduleHelper.FindActiveBedtime(_config.Bedtimes, now) is not null)
+            return;
+
+        var occurrences = BedtimeScheduleHelper.GetOccurrencesInRange(_config.Bedtimes, now, now.AddDays(2));
+        BedtimeOccurrence? next = null;
+        foreach (var occ in occurrences)
+        {
+            if (occ.StartsAtLocal > now)
+            {
+                next = occ;
+                break;
+            }
+        }
+
+        if (next is null)
+        {
+            _bedtimeUpcomingWarn5Key = null;
+            _bedtimeUpcomingWarn1Key = null;
+            return;
+        }
+
+        var key   = BedtimeOccurrenceKey(next.Value);
+        var label = BedtimeScheduleHelper.Describe(next.Value.Rule.Schedule);
+        int secs  = (int)(next.Value.StartsAtLocal - now).TotalSeconds;
+
+        if (secs > 300)
+        {
+            if (_bedtimeUpcomingWarn5Key != key) _bedtimeUpcomingWarn5Key = null;
+            if (_bedtimeUpcomingWarn1Key != key) _bedtimeUpcomingWarn1Key = null;
+            return;
+        }
+
+        if (secs <= 0)
+            return;
+
+        try
+        {
+            if (_bedtimeUpcomingWarn5Key != key && secs <= 300 && secs > 60)
+            {
+                _notifier.ShowMessage(
+                    "Focus Lock — Bedtime",
+                    $"Bedtime starts in about 5 minutes ({label}).");
+                _bedtimeUpcomingWarn5Key = key;
+            }
+            else if (_bedtimeUpcomingWarn1Key != key && secs <= 60)
+            {
+                _notifier.ShowMessage(
+                    "Focus Lock — Bedtime",
+                    $"Bedtime starts in about 1 minute ({label}).");
+                _bedtimeUpcomingWarn1Key = key;
+            }
+        }
+        catch (Exception ex) { _log.LogDebug(ex, "Failed to show upcoming bedtime notification."); }
+    }
+
+    private static string BedtimeOccurrenceKey(BedtimeOccurrence occ)
+        => $"{occ.Rule.Id}:{occ.StartsAtLocal:O}";
 
     private void TickDailyLimit(DateTime now, bool userActive, uint sessionId)
     {

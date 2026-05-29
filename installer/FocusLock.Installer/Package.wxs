@@ -10,7 +10,8 @@
   AppFiles ComponentGroup glob below.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
 
   <Package Name="Focus Lock"
            Version="1.0.0.0"
@@ -24,22 +25,26 @@
     <!-- Automatically remove older versions on upgrade. -->
     <MajorUpgrade DowngradeErrorMessage="A newer version of Focus Lock is already installed. Please uninstall it first." />
 
-    <!-- ── .NET 9 Desktop Runtime prerequisite ──────────────────────────────── -->
-    <!--
-      DirectorySearch detects any installed patch of WindowsDesktop.App (9.0.x, 9.0.y, …).
-      RegistrySearch with Name="9.0.0" would only match the exact patch 9.0.0, not 9.0.5 etc.
-    -->
-    <Property Id="DOTNET9DESKTOPRUNTIME">
-      <DirectorySearch Id="SearchDotNet9Desktop"
-                       Path="[ProgramFiles64Folder]dotnet\shared\Microsoft.WindowsDesktop.App"
-                       Depth="0" />
+    <!-- Windows 10 1809+ (build 17763) or Windows 11 — matches app target and .NET 9 desktop support. -->
+    <Property Id="WINDOWSBUILD" Secure="yes">
+      <RegistrySearch Id="WindowsBuildNumber"
+                      Root="HKLM"
+                      Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+                      Name="CurrentBuildNumber"
+                      Type="raw" />
     </Property>
-    <!--
-      <Launch> is the WiX v5 equivalent of <Condition> inside <Product>.
-      Shows a dialog and aborts if .NET Desktop Runtime is not installed at all.
-    -->
-    <Launch Condition="Installed OR DOTNET9DESKTOPRUNTIME"
-            Message="Focus Lock requires the .NET 9.0 Desktop Runtime.&#13;&#10;Please install it from https://dotnet.microsoft.com and run this installer again." />
+    <Launch Condition="Installed OR WINDOWSBUILD &gt;= 17763"
+            Message="Focus Lock requires Windows 10 version 1809 (build 17763) or later, or Windows 11." />
+
+    <!-- .NET 9 Desktop Runtime (x64) — uses hostfxr; reliable on Windows 10 (folder-only checks are not). -->
+    <netfx:DotNetCompatibilityCheck Id="DotNet9DesktopCheck"
+                                   Property="DOTNET9DESKTOPCHECK"
+                                   RuntimeType="desktop"
+                                   Platform="x64"
+                                   Version="9.0.0"
+                                   RollForward="major" />
+    <Launch Condition="Installed OR DOTNET9DESKTOPCHECK = &quot;0&quot;"
+            Message="Focus Lock requires the .NET Desktop Runtime (x64), version 9.0 or newer.&#13;&#10;Download it from https://dotnet.microsoft.com/download/dotnet/9.0 (or a later major version) and run this installer again." />
 
     <!-- ── All publish output EXCEPT FocusLock.Service.exe ──────────────────── -->
     <!--

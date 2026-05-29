@@ -12,6 +12,8 @@
   <ItemGroup>
     <!-- Util extension provides util:ServiceConfig (failure actions) -->
     <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+    <!-- Netfx extension provides DotNetCompatibilityCheck for .NET 9 runtime detection -->
+    <PackageReference Include="WixToolset.Netfx.wixext" Version="5.0.2" />
   </ItemGroup>
 
   <!--

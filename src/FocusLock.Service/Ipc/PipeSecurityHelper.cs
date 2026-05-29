@@ -17,25 +17,20 @@ internal static class PipeSecurityHelper
             PipeAccessRights.FullControl,
             AccessControlType.Allow));
 
-        // UI runs elevated (requireAdministrator). BlockerStub runs as the interactive user.
+        // UI (asInvoker) and BlockerStub run in the interactive session — not WorldSid / broad AuthenticatedUser.
         security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
-            PipeAccessRights.ReadWrite,
-            AccessControlType.Allow));
-
-        security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+            new SecurityIdentifier(WellKnownSidType.InteractiveSid, null),
             PipeAccessRights.ReadWrite,
             AccessControlType.Allow));
 
         return security;
     }
 
+    /// <summary>
+    /// Only destructive recovery requires an elevated client; session ops run in the service as SYSTEM.
+    /// </summary>
     public static bool RequiresAdministrator(string messageType) =>
-        messageType is PipeConstants.StartSession
-            or PipeConstants.EndSession
-            or PipeConstants.SetScreenTimeConfig
-            or PipeConstants.ForceReset;
+        messageType is PipeConstants.ForceReset;
 
     public static bool TryGetClientIsAdministrator(NamedPipeServerStream pipe, out bool isAdmin)
     {

@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- Windows 10 1809+ (17763); matches installer prerequisite and BlockerStub. -->
+    <TargetFramework>net9.0-windows10.0.17763.0</TargetFramework>
+    <!-- Match installer DotNetCompatibilityCheck RollForward=major (.NET 9+ desktop on target PC). -->
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+</Project>

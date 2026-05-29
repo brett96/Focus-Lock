@@ -69,10 +69,23 @@ public class SessionWorker : BackgroundService
         {
             try
             {
-                using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                readCts.CancelAfter(TimeSpan.FromSeconds(PipeConstants.IpcReadTimeoutSeconds));
+                PipeMessage? msg;
 
-                var msg = await PipeFraming.ReadMessageAsync(pipe, readCts.Token);
+                // 3-second read timeout prevents idle clients from exhausting pipe instances (DoS).
+                using (var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+                {
+                    timeoutCts.CancelAfter(TimeSpan.FromSeconds(PipeConstants.IpcReadTimeoutSeconds));
+                    try
+                    {
+                        msg = await PipeFraming.ReadMessageAsync(pipe, timeoutCts.Token);
+                    }
+                    catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                    {
+                        _log.LogWarning("Client connection timed out while waiting for payload.");
+                        return;
+                    }
+                }
+
                 if (msg is null) return;
 
                 if (PipeSecurityHelper.RequiresAdministrator(msg.Type))

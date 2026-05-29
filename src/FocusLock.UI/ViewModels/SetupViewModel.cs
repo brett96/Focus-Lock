@@ -85,7 +85,7 @@ public partial class SetupViewModel : ObservableObject
     public IEnumerable<SelectableApp> FilteredApps =>
         string.IsNullOrWhiteSpace(AppSearchText)
             ? AvailableApps
-            : AvailableApps.Where(a => a.DisplayName.Contains(AppSearchText, StringComparison.OrdinalIgnoreCase));
+            : AvailableApps.Where(a => AppMatchesSearch(a, AppSearchText));
 
     public ObservableCollection<SelectableApp> AvailableApps { get; } = new();
     public ObservableCollection<BlockedApp>    BlockedApps   { get; } = new();
@@ -301,7 +301,7 @@ public partial class SetupViewModel : ObservableObject
     public IEnumerable<SelectableApp> StFilteredDraftApps =>
         string.IsNullOrWhiteSpace(StDraftAppSearch)
             ? AvailableApps
-            : AvailableApps.Where(a => a.DisplayName.Contains(StDraftAppSearch, StringComparison.OrdinalIgnoreCase));
+            : AvailableApps.Where(a => AppMatchesSearch(a, StDraftAppSearch));
 
     public bool StHasNoDraftApps => !IsLoadingApps && !StFilteredDraftApps.Any();
 
@@ -355,17 +355,39 @@ public partial class SetupViewModel : ObservableObject
     private void OnSelectableAppChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(SelectableApp.IsSelected) || sender is not SelectableApp app) return;
+
+        var sameExe = AvailableApps
+            .Where(a => string.Equals(a.ExeName, app.ExeName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
         if (app.IsSelected)
         {
+            SetSelectableSelected(sameExe, selected: true);
             if (!BlockedApps.Any(a => string.Equals(a.ExeName, app.ExeName, StringComparison.OrdinalIgnoreCase)))
                 BlockedApps.Add(new BlockedApp(app.DisplayName, app.ExeName));
         }
         else
         {
+            SetSelectableSelected(sameExe, selected: false);
             var existing = BlockedApps.FirstOrDefault(a =>
                 string.Equals(a.ExeName, app.ExeName, StringComparison.OrdinalIgnoreCase));
             if (existing is not null)
                 BlockedApps.Remove(existing);
+        }
+    }
+
+    private static bool AppMatchesSearch(SelectableApp app, string search) =>
+        app.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase)
+        || app.ExeName.Contains(search, StringComparison.OrdinalIgnoreCase)
+        || app.ExePath.Contains(search, StringComparison.OrdinalIgnoreCase);
+
+    private static void SetSelectableSelected(IEnumerable<SelectableApp> apps, bool selected)
+    {
+        foreach (var item in apps)
+        {
+            if (item.IsSelected == selected)
+                continue;
+            item.IsSelected = selected;
         }
     }
 
@@ -498,10 +520,11 @@ public partial class SetupViewModel : ObservableObject
     [RelayCommand]
     private void RemoveApp(BlockedApp app)
     {
-        var selectable = AvailableApps.FirstOrDefault(a =>
-            string.Equals(a.ExeName, app.ExeName, StringComparison.OrdinalIgnoreCase));
-        if (selectable is not null)
-            selectable.IsSelected = false;
+        var selectables = AvailableApps
+            .Where(a => string.Equals(a.ExeName, app.ExeName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (selectables.Count > 0)
+            SetSelectableSelected(selectables, selected: false);
         else
             BlockedApps.Remove(app);
     }
@@ -523,11 +546,12 @@ public partial class SetupViewModel : ObservableObject
             return;
         }
 
-        var selectable = AvailableApps.FirstOrDefault(a =>
-            string.Equals(a.ExeName, exeName, StringComparison.OrdinalIgnoreCase));
-        if (selectable is not null)
+        var selectables = AvailableApps
+            .Where(a => string.Equals(a.ExeName, exeName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (selectables.Count > 0)
         {
-            selectable.IsSelected = true;
+            SetSelectableSelected(selectables, selected: true);
         }
         else
         {

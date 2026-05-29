@@ -8,7 +8,7 @@ Focus Lock is a **Windows self-focus assistant app**: you start a timed “focus
   - Uses **IFEO (Image File Execution Options)** to redirect launches of blocked executables to a tiny stub (`FocusLock.BlockerStub.exe`).
   - When a blocked app is launched, a **Windows toast** appears (via `BlockerStub` over IFEO). Each launch uses a unique toast tag so repeat attempts after dismissing still notify. IPC to the service retries on timeout.
   - The service also runs a **process monitor loop** that kills blocked processes every ~2 seconds (helps catch renamed exes and already-running apps).
-  - Apps are selected from a searchable dropdown of all installed applications (populated from the Windows App Paths registry); a Browse button handles apps not in the list.
+  - Apps are selected from a searchable dropdown of installed applications (Windows App Paths registry plus a scan of `Program Files` and `Program Files (x86)`). Duplicate product names show a path hint (e.g. `Google › Chrome`). A Browse button handles apps not in the list.
 - **Website blocking**
   - The service appends a sentinel block to the Windows **hosts file** (`C:\Windows\System32\drivers\etc\hosts`), redirecting blocked domains to `127.0.0.1`, and flushes DNS.
   - A lightweight HTTP server runs on port 80 for the duration of the session. When a blocked site is visited over **HTTP**, the browser shows a styled block page and a **Windows toast** is shown via `BlockerStub` (debounced ~5 seconds per domain). **HTTPS** visits are still blocked via the hosts file but cannot show the block page or toast without TLS interception.
@@ -34,6 +34,7 @@ Focus Lock is a **Windows self-focus assistant app**: you start a timed “focus
   - During an active session, the **dashboard** shows live countdowns for the session deadline, screen-time usage, remaining quota per limit, interval-reset times for interval-based app limits, and scrollable lists of blocked apps/sites.
   - When the daily limit uses a **schedule window**, the dashboard shows that window and whether tracking is active now. With **multiple daily limits on the same day**, the dashboard highlights one rule at a time: the **currently active** window first; if none is active, the **next upcoming** window today (“Next daily limit window” / “Starts at …”); if all of today’s windows have ended, the **most recently ended** window (“Last window ended at …”). Outside any window, the remaining-time line shows when tracking resumes.
   - **Warning toasts** at 5 and 1 minutes remaining for the daily total and per-app limits (5‑minute warning skipped if the limit is under 5 minutes).
+  - **Bedtime warning toasts** at 5 and 1 minutes before a bedtime window starts (during an active session).
   - When a screen-time-limited app is blocked, or a site is blocked over HTTP, the user gets a **native notification** (via `BlockerStub` and `IsBlockedResponse.BlockMessage`).
 - **Bedtimes** *(optional; enforced only during an active Focus Lock session)*
   - Add **multiple bedtime schedules** on the **Screen Time** settings page or in the session setup wizard. Each bedtime is a day/time range (overnight ranges supported, e.g. 10 PM–7 AM). **Edit** and **Delete** on each row.
@@ -123,9 +124,11 @@ The stub also accepts `--notify <domain> <deadline>` (website block popup) and `
 
 ### Prerequisites
 
-- Windows 10 or 11
+- Windows 10 version **1809** (build 17763) or later, or Windows 11 (**64-bit**)
 - [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9) (for building)
-- [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9) (for running — the SDK includes this)
+- [.NET 9 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/9.0) on machines running the installed app — the MSI checks for this before setup
+
+**Windows 10 install issues:** Confirm the PC is on build **17763+** (`Settings` → `System` → `About`) and that the **.NET Desktop Runtime (x64), 9.0 or newer**, is installed — not only the ASP.NET Core runtime. The MSI uses `DotNetCompatibilityCheck` with roll-forward, so **.NET 10** is acceptable; published apps also roll forward to newer major runtimes. If install fails with *“Focus Lock Service failed to start”* after prerequisites look correct, check **Event Viewer → Windows Logs → Application** for `.NET Runtime` errors (often “framework 9.0.0 not found” when roll-forward was missing in older builds).
 
 ### Build everything (source only, no installer)
 
@@ -164,7 +167,7 @@ Debug variant:
 
 ### Running the UI during development
 
-The UI requires administrator rights (it is declared `requireAdministrator` in its manifest). **Open your terminal as Administrator**, then:
+The UI runs at the normal user privilege level (`asInvoker`); privileged work is done by the service. For development:
 
 ```powershell
 dotnet run --project src\FocusLock.UI

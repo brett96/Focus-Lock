@@ -242,7 +242,9 @@ public partial class ScreenTimeViewModel : ObservableObject
         string.IsNullOrWhiteSpace(DraftAppSearch)
             ? DraftAvailableApps
             : DraftAvailableApps.Where(a =>
-                a.DisplayName.Contains(DraftAppSearch, StringComparison.OrdinalIgnoreCase));
+                a.DisplayName.Contains(DraftAppSearch, StringComparison.OrdinalIgnoreCase)
+                || a.ExeName.Contains(DraftAppSearch, StringComparison.OrdinalIgnoreCase)
+                || a.ExePath.Contains(DraftAppSearch, StringComparison.OrdinalIgnoreCase));
 
     public bool HasNoDraftApps => !IsDraftAppsLoading && !FilteredDraftApps.Any();
 
