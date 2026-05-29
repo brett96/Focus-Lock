@@ -34,12 +34,12 @@ WiX SDK: `WixToolset.Sdk/5.0.2` (pulled via NuGet — no separate WiX install ne
 
 ## Versioning
 
-**Current version:** 1.2.1 (see `Version.props`).
+**Current version:** 1.2.5 (see `Version.props`).
 
 **Bump the version with every user-facing change** before a release build. Edit **`Version.props`** only:
 
-- `FocusLockVersion` — semver `major.minor.patch` (e.g. `1.2.1`)
-- `FocusLockAssemblyVersion` — four-part `major.minor.patch.0` (e.g. `1.2.1.0`)
+- `FocusLockVersion` — semver `major.minor.patch` (e.g. `1.2.5`)
+- `FocusLockAssemblyVersion` — four-part `major.minor.patch.0` (e.g. `1.2.5.0`)
 
 Semver: **PATCH** for fixes, **MINOR** for features (reset patch to `0`), **MAJOR** for breaking changes (reset minor/patch to `0`). Always keep both properties in sync.
 
@@ -155,9 +155,9 @@ Pages: `DashboardPage` (primary idle/active UI), `SetupPage` (wizard), `ActiveSe
 
 | `src/FocusLock.UI/ViewModels/AppTimeLimitViewModel.cs` | List row VM for a per-app limit (`EditCommand`, delete) |
 
-**Bedtimes** (`BedtimeRule`, `BedtimeScheduleHelper`): Stored in `ScreenTimeConfig.Bedtimes`. Enforced by `ScreenTimeManager.TickBedtime` only while `_sessionActive`. Active bedtime → toast → `WTSDisconnectSession` after 5s; re-login repeats until window ends. `ShouldRunTick()` is `_sessionActive` only (bedtimes do not keep the loop running without a session). Overlap: `ScreenTimeScheduleOverlap.TryFindBedtimeLimitConflict` / `HasBedtimeLimitConflicts`. Overnight: end ≤ start on start day; morning tail uses previous day’s flag.
+**Bedtimes** (`BedtimeRule`, `BedtimeScheduleHelper`): Stored in `ScreenTimeConfig.Bedtimes`. Enforced by `ScreenTimeManager.TickBedtime` only while a focus session is active. Active bedtime → toast → `WTSDisconnectSession` after 5s; re-login repeats until window ends. `ShouldRunTick()` runs only during an active focus session. Overlap: `ScreenTimeScheduleOverlap.TryFindBedtimeLimitConflict` / `HasBedtimeLimitConflicts`. Overnight: end ≤ start on start day; morning tail uses previous day’s flag.
 
-**Screen Time enforcement (sessions)**: `ScreenTimeManager` tracks multiple `DailyLimits` (each with its own schedule and per-rule usage in `DailyRuleUsage`). At most one daily rule is active at any instant; overlap is prevented at setup. Per-app limits use rule `Id` for state; same app may have multiple non-overlapping limits.
+**Screen Time enforcement (sessions)**: `ScreenTimeManager` tracks multiple `DailyLimits` (each with its own schedule and per-rule usage in `DailyRuleUsage`). At most one daily rule is active at any instant; overlap is prevented at setup. Per-app limits use rule `Id` for state; same app may have multiple non-overlapping limits. App usage detection uses `BlockedAppMatcher.MatchesAppTimeLimit` (same matching rules as session app blocking).
 
 **Screen time limit editing** (`SetupViewModel`, `ScreenTimeViewModel`): list rows use `DailyTimeLimitViewModel` / `AppTimeLimitViewModel` with `EditCommand` + delete callback. Edit sets `_editingDailyLimitId` / `_editingAppLimitId`, opens the add form pre-filled, and switches form title/button to “Edit …” / “Save”. Save preserves the existing rule `Id`. Overlap checks pass `excludeId` so the rule being edited does not conflict with itself. XAML: Edit button left of delete on `SetupPage` and `ScreenTimePage`.
 

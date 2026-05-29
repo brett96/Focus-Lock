@@ -5,6 +5,8 @@ public class AppTimeLimit
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string ExeName { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+    /// <summary>Related executables from the installed-app picker (e.g. all msedge*.exe in the install folder).</summary>
+    public List<string>? ExeNames { get; set; }
     public AppLimitType LimitType { get; set; }
 
     // DailyTotal: max minutes per day (within schedule window).

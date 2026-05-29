@@ -1,6 +1,6 @@
 # Focus Lock
 
-**Current version:** 1.2.1
+**Current version:** 1.2.5
 
 Focus Lock is a **Windows self-focus assistant app**: you start a timed “focus session” that **blocks chosen apps and websites until a deadline**. The app is designed so that the **privileged enforcement** happens in a Windows Service running as **LocalSystem**, while the UI is a normal desktop app that talks to the service over IPC.
 
@@ -30,7 +30,7 @@ Focus Lock is a **Windows self-focus assistant app**: you start a timed “focus
   - **Per-app time limits** — each app can have its own limit and optional schedule (defaults to always on). These do **not** inherit the device daily-limit schedule unless you set a per-app schedule. Multiple limits for the same app are allowed when their schedules do not overlap. Each row supports **Edit** and **Delete** like daily limits.
     - *Daily Total*: at most X minutes of use within the app's schedule window during the session.
     - *Interval*: at most X minutes per Y-minute interval within the app's schedule window.
-  - Usage is tracked while the app's process is running (or in the foreground). The dashboard polls the service every second during an active session.
+  - Usage is tracked while the app's process is running.
   - **Website categories** — block preset groups of sites (Adult, Entertainment, Social, etc.) from the session setup screen.
   - Configuration persists in `C:\ProgramData\FocusLock\screen-time-config.json`. Usage counters are session-scoped (reset when a session starts and cleared when it ends).
   - During an active session, the **dashboard** shows live countdowns for the session deadline, screen-time usage, remaining quota per limit, interval-reset times for interval-based app limits, and scrollable lists of blocked apps/sites.
@@ -133,8 +133,8 @@ The canonical version lives in **`Version.props`** at the repository root:
 
 | Property | Example | Used for |
 |----------|---------|----------|
-| `FocusLockVersion` | `1.2.1` | Semver (docs, informational version) |
-| `FocusLockAssemblyVersion` | `1.2.1.0` | Assemblies, file version, MSI `Package/@Version` |
+| `FocusLockVersion` | `1.2.5` | Semver (docs, informational version) |
+| `FocusLockAssemblyVersion` | `1.2.5.0` | Assemblies, file version, MSI `Package/@Version` |
 
 **Semver rules (consistent bumps):**
 
@@ -144,7 +144,7 @@ The canonical version lives in **`Version.props`** at the repository root:
 | New features, backward compatible | **MINOR** (reset patch to `0`) | `1.1.2` → `1.2.0` |
 | Breaking changes or major redesign | **MAJOR** (reset minor/patch to `0`) | `1.2.3` → `2.0.0` |
 
-When bumping, update **both** properties in `Version.props` so the semver and four-part values stay aligned (`1.2.1` ↔ `1.2.1.0`).
+When bumping, update **both** properties in `Version.props` so the semver and four-part values stay aligned (`1.2.3` ↔ `1.2.3.0`).
 
 **What updates automatically** (via `Version.props` imports):
 

@@ -44,4 +44,20 @@ public class AppLauncherDiscoveryTests
         Assert.True(BlockedAppMatcher.ApplicationNameMatches("steam", "Steam Client"));
         Assert.True(BlockedAppMatcher.ApplicationNameMatches("steam.exe", "Steam Client"));
     }
+
+    [Fact]
+    public void ApplicationNameMatches_Normalized_Geekbench6()
+    {
+        Assert.True(BlockedAppMatcher.ApplicationNameMatches("geekbench6", "Geekbench 6"));
+        Assert.True(BlockedAppMatcher.ApplicationNameMatches("Geekbench6.exe", "Geekbench 6"));
+    }
+
+    [Fact]
+    public void IfeoRegistryPaths_IncludesWow6432On64BitOs()
+    {
+        var paths = IfeoRegistryPaths.All;
+        Assert.Contains(IfeoRegistryPaths.Native, paths);
+        if (Environment.Is64BitOperatingSystem)
+            Assert.Contains(IfeoRegistryPaths.Wow6432, paths);
+    }
 }

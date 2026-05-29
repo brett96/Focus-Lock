@@ -1,8 +1,8 @@
 <Project>
   <PropertyGroup Label="Focus Lock release version — bump with every user-facing update">
     <!-- Semver shown in UI/docs (major.minor.patch). -->
-    <FocusLockVersion>1.2.1</FocusLockVersion>
+    <FocusLockVersion>1.2.5</FocusLockVersion>
     <!-- Four-part version for assemblies, file resources, and MSI (major.minor.patch.0). -->
-    <FocusLockAssemblyVersion>1.2.1.0</FocusLockAssemblyVersion>
+    <FocusLockAssemblyVersion>1.2.5.0</FocusLockAssemblyVersion>
   </PropertyGroup>
 </Project>

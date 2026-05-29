@@ -152,17 +152,38 @@ public static class InstalledAppsLoader
             Path.GetFileName(primaryPath),
         };
 
+        installLocation = ResolveInstallDirectory(installLocation, primaryPath);
+        if (string.IsNullOrWhiteSpace(installLocation) || !Directory.Exists(installLocation))
+            return names;
+
         var primaryProduct = BlockedAppMatcher.TryGetProductName(primaryPath) ?? displayName;
 
-        if (!string.IsNullOrWhiteSpace(installLocation) && Directory.Exists(installLocation))
-        {
-            foreach (var rootExe in AppLauncherDiscovery.CollectRootInstallExes(installLocation))
-                names.Add(rootExe);
+        foreach (var rootExe in AppLauncherDiscovery.CollectRootInstallExes(installLocation))
+            names.Add(rootExe);
 
-            ScanInstallFolder(installLocation, displayName, primaryProduct, names, depth: 0);
-        }
+        ScanInstallFolder(installLocation, displayName, primaryProduct, names, depth: 0);
+
+        var normalizedDisplay = BlockedAppMatcher.NormalizeName(displayName);
+        if (normalizedDisplay.Length >= 4)
+            ScanNormalizedInstallExes(installLocation, normalizedDisplay, names, depth: 0);
 
         return names;
+    }
+
+    private static string? ResolveInstallDirectory(string? installLocation, string primaryPath)
+    {
+        if (!string.IsNullOrWhiteSpace(installLocation) && Directory.Exists(installLocation))
+            return installLocation;
+
+        try
+        {
+            var parent = Path.GetDirectoryName(Path.GetFullPath(primaryPath));
+            return string.IsNullOrWhiteSpace(parent) ? null : parent;
+        }
+        catch
+        {
+            return installLocation;
+        }
     }
 
     private static void ScanInstallFolder(
@@ -172,7 +193,7 @@ public static class InstalledAppsLoader
         HashSet<string> names,
         int depth)
     {
-        if (depth > 2) return;
+        if (depth > 4) return;
 
         try
         {
@@ -196,7 +217,7 @@ public static class InstalledAppsLoader
         }
         catch { }
 
-        if (depth == 2) return;
+        if (depth == 4) return;
 
         try
         {
@@ -204,6 +225,56 @@ public static class InstalledAppsLoader
                 ScanInstallFolder(subDir, displayName, primaryProduct, names, depth + 1);
         }
         catch { }
+    }
+
+    private static void ScanNormalizedInstallExes(
+        string directory,
+        string normalizedDisplay,
+        HashSet<string> names,
+        int depth)
+    {
+        if (depth > 4) return;
+
+        try
+        {
+            foreach (var exePath in Directory.EnumerateFiles(directory, "*.exe"))
+            {
+                var fileName = Path.GetFileName(exePath);
+                if (AppLauncherDiscovery.IsUtilityExecutable(fileName))
+                    continue;
+                if (SystemProcessList.IsProtectedFromBlocking(fileName, exePath))
+                    continue;
+
+                var baseName = Path.GetFileNameWithoutExtension(fileName);
+                if (NamesMatchNormalized(baseName, normalizedDisplay))
+                    names.Add(fileName);
+            }
+        }
+        catch { }
+
+        if (depth == 4) return;
+
+        try
+        {
+            foreach (var subDir in Directory.EnumerateDirectories(directory))
+                ScanNormalizedInstallExes(subDir, normalizedDisplay, names, depth + 1);
+        }
+        catch { }
+    }
+
+    private static bool NamesMatchNormalized(string exeBaseName, string normalizedDisplay)
+    {
+        var normExe = BlockedAppMatcher.NormalizeName(exeBaseName);
+        if (normExe.Length < 3)
+            return false;
+
+        if (normExe.Equals(normalizedDisplay, StringComparison.Ordinal))
+            return true;
+
+        if (normalizedDisplay.Length >= 5 && normExe.StartsWith(normalizedDisplay, StringComparison.Ordinal))
+            return true;
+
+        return normExe.Length >= 5 && normalizedDisplay.StartsWith(normExe, StringComparison.Ordinal);
     }
 
     private static string? ResolvePrimaryExecutable(

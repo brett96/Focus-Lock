@@ -9,7 +9,6 @@ namespace FocusLock.Service.Blocking;
 
 public class AppBlocker(ILogger log)
 {
-    private const string IfeoBase = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options";
     private const string DebuggerValue = "Debugger";
     private static readonly string StubPath =
         Path.Combine(AppContext.BaseDirectory, "FocusLock.BlockerStub.exe");
@@ -68,11 +67,7 @@ public class AppBlocker(ILogger log)
         {
             try
             {
-                using var key = Registry.LocalMachine.OpenSubKey(
-                    $@"{IfeoBase}\{exeName}", writable: false);
-
-                var current = key?.GetValue(DebuggerValue) as string;
-                if (!string.Equals(current, StubPath, StringComparison.OrdinalIgnoreCase))
+                if (!IsIfeoStubSet(exeName))
                     WriteIfeo(exeName, session);
             }
             catch (Exception ex)
@@ -94,25 +89,28 @@ public class AppBlocker(ILogger log)
                                       | RegistryRights.ChangePermissions;
         foreach (var exeName in EnumerateBlockableExeNames(session))
         {
-            try
+            foreach (var ifeoBase in IfeoRegistryPaths.All)
             {
-                using var key = Registry.LocalMachine.OpenSubKey(
-                    $@"{IfeoBase}\{exeName}",
-                    RegistryKeyPermissionCheck.ReadWriteSubTree,
-                    RegistryRights.ChangePermissions | RegistryRights.ReadPermissions);
-                if (key is null) continue;
+                try
+                {
+                    using var key = Registry.LocalMachine.OpenSubKey(
+                        $@"{ifeoBase}\{exeName}",
+                        RegistryKeyPermissionCheck.ReadWriteSubTree,
+                        RegistryRights.ChangePermissions | RegistryRights.ReadPermissions);
+                    if (key is null) continue;
 
-                var sec = key.GetAccessControl();
-                sec.AddAccessRule(new RegistryAccessRule(
-                    admins, denyMask,
-                    InheritanceFlags.None, PropagationFlags.None,
-                    AccessControlType.Deny));
-                key.SetAccessControl(sec);
-                log.LogDebug("IFEO ACL locked for {Exe}.", exeName);
-            }
-            catch (Exception ex)
-            {
-                log.LogWarning(ex, "Failed to lock IFEO ACL for {Exe}.", exeName);
+                    var sec = key.GetAccessControl();
+                    sec.AddAccessRule(new RegistryAccessRule(
+                        admins, denyMask,
+                        InheritanceFlags.None, PropagationFlags.None,
+                        AccessControlType.Deny));
+                    key.SetAccessControl(sec);
+                    log.LogDebug("IFEO ACL locked for {Exe} ({Base}).", exeName, ifeoBase);
+                }
+                catch (Exception ex)
+                {
+                    log.LogWarning(ex, "Failed to lock IFEO ACL for {Exe} ({Base}).", exeName, ifeoBase);
+                }
             }
         }
     }
@@ -126,29 +124,32 @@ public class AppBlocker(ILogger log)
         var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
         foreach (var exeName in EnumerateBlockableExeNames(session))
         {
-            try
+            foreach (var ifeoBase in IfeoRegistryPaths.All)
             {
-                using var key = Registry.LocalMachine.OpenSubKey(
-                    $@"{IfeoBase}\{exeName}",
-                    RegistryKeyPermissionCheck.ReadWriteSubTree,
-                    RegistryRights.ChangePermissions | RegistryRights.ReadPermissions);
-                if (key is null) continue;
+                try
+                {
+                    using var key = Registry.LocalMachine.OpenSubKey(
+                        $@"{ifeoBase}\{exeName}",
+                        RegistryKeyPermissionCheck.ReadWriteSubTree,
+                        RegistryRights.ChangePermissions | RegistryRights.ReadPermissions);
+                    if (key is null) continue;
 
-                var sec = key.GetAccessControl();
-                var toRemove = sec
-                    .GetAccessRules(true, false, typeof(SecurityIdentifier))
-                    .Cast<RegistryAccessRule>()
-                    .Where(r => r.AccessControlType == AccessControlType.Deny
-                             && r.IdentityReference.Equals(admins))
-                    .ToList();
-                foreach (var rule in toRemove)
-                    sec.RemoveAccessRule(rule);
-                key.SetAccessControl(sec);
-                log.LogDebug("IFEO ACL unlocked for {Exe}.", exeName);
-            }
-            catch (Exception ex)
-            {
-                log.LogWarning(ex, "Failed to unlock IFEO ACL for {Exe}.", exeName);
+                    var sec = key.GetAccessControl();
+                    var toRemove = sec
+                        .GetAccessRules(true, false, typeof(SecurityIdentifier))
+                        .Cast<RegistryAccessRule>()
+                        .Where(r => r.AccessControlType == AccessControlType.Deny
+                                 && r.IdentityReference.Equals(admins))
+                        .ToList();
+                    foreach (var rule in toRemove)
+                        sec.RemoveAccessRule(rule);
+                    key.SetAccessControl(sec);
+                    log.LogDebug("IFEO ACL unlocked for {Exe} ({Base}).", exeName, ifeoBase);
+                }
+                catch (Exception ex)
+                {
+                    log.LogWarning(ex, "Failed to unlock IFEO ACL for {Exe} ({Base}).", exeName, ifeoBase);
+                }
             }
         }
     }
@@ -196,27 +197,30 @@ public class AppBlocker(ILogger log)
 
     public void RemoveAllStubIfeoKeys()
     {
-        try
+        foreach (var ifeoBase in IfeoRegistryPaths.All)
         {
-            using var ifeoBase = Registry.LocalMachine.OpenSubKey(IfeoBase, writable: true);
-            if (ifeoBase is null) return;
-            foreach (var name in ifeoBase.GetSubKeyNames())
+            try
             {
-                try
+                using var ifeoRoot = Registry.LocalMachine.OpenSubKey(ifeoBase, writable: true);
+                if (ifeoRoot is null) continue;
+                foreach (var name in ifeoRoot.GetSubKeyNames())
                 {
-                    using var key = ifeoBase.OpenSubKey(name, writable: true);
-                    if (key is null) continue;
-                    var debugger = key.GetValue(DebuggerValue) as string;
-                    if (string.Equals(debugger, StubPath, StringComparison.OrdinalIgnoreCase))
+                    try
                     {
-                        key.DeleteValue(DebuggerValue, throwOnMissingValue: false);
-                        log.LogInformation("Cleared stale IFEO entry for {Exe}.", name);
+                        using var key = ifeoRoot.OpenSubKey(name, writable: true);
+                        if (key is null) continue;
+                        var debugger = key.GetValue(DebuggerValue) as string;
+                        if (string.Equals(debugger, StubPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            key.DeleteValue(DebuggerValue, throwOnMissingValue: false);
+                            log.LogInformation("Cleared stale IFEO entry for {Exe} ({Base}).", name, ifeoBase);
+                        }
                     }
+                    catch (Exception ex) { log.LogWarning(ex, "Could not clear IFEO for {Exe}.", name); }
                 }
-                catch (Exception ex) { log.LogWarning(ex, "Could not clear IFEO for {Exe}.", name); }
             }
+            catch (Exception ex) { log.LogError(ex, "Failed to enumerate IFEO keys under {Base}.", ifeoBase); }
         }
-        catch (Exception ex) { log.LogError(ex, "Failed to enumerate IFEO keys for reset."); }
     }
 
     private static IEnumerable<string> EnumerateBlockableExeNames(FocusSession session)
@@ -237,94 +241,120 @@ public class AppBlocker(ILogger log)
     private static bool IsSessionBlockedExe(FocusSession? session, string exeName, string? fullPath = null)
         => session?.BlockedApps.Any(a => BlockedAppMatcher.IsBlocked(exeName, a, fullPath)) == true;
 
+    private static bool IsIfeoStubSet(string exeName)
+    {
+        foreach (var ifeoBase in IfeoRegistryPaths.All)
+        {
+            using var key = Registry.LocalMachine.OpenSubKey($@"{ifeoBase}\{exeName}", writable: false);
+            var current = key?.GetValue(DebuggerValue) as string;
+            if (string.Equals(current, StubPath, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
     private void WriteIfeo(string exeName, FocusSession session)
     {
-        try
+        var paths = IfeoRegistryPaths.All;
+        for (int i = 0; i < paths.Count; i++)
         {
-            using var key = Registry.LocalMachine.CreateSubKey($@"{IfeoBase}\{exeName}", writable: true);
-            // Save the pre-existing Debugger value so we can restore it on session end.
-            // If the existing value is already our stub (stale from a prior session), treat it
-            // as absent — otherwise RestoreIfeo would re-set the stub and leave the app blocked.
-            if (!session.IfeoPreExistingDebuggers.ContainsKey(exeName))
+            try
             {
-                var existing = key.GetValue(DebuggerValue) as string;
-                if (string.Equals(existing, StubPath, StringComparison.OrdinalIgnoreCase))
-                    existing = null;
-                session.IfeoPreExistingDebuggers[exeName] = existing;
+                using var key = Registry.LocalMachine.CreateSubKey($@"{paths[i]}\{exeName}", writable: true);
+                if (i == 0 && !session.IfeoPreExistingDebuggers.ContainsKey(exeName))
+                {
+                    var existing = key.GetValue(DebuggerValue) as string;
+                    if (string.Equals(existing, StubPath, StringComparison.OrdinalIgnoreCase))
+                        existing = null;
+                    session.IfeoPreExistingDebuggers[exeName] = existing;
+                }
+
+                key.SetValue(DebuggerValue, StubPath, RegistryValueKind.String);
             }
-            key.SetValue(DebuggerValue, StubPath, RegistryValueKind.String);
-            log.LogDebug("IFEO set for {Exe}.", exeName);
+            catch (Exception ex)
+            {
+                log.LogError(ex, "Failed to write IFEO for {Exe} ({Base}).", exeName, paths[i]);
+            }
         }
-        catch (Exception ex)
-        {
-            log.LogError(ex, "Failed to write IFEO for {Exe}.", exeName);
-        }
+
+        log.LogDebug("IFEO set for {Exe} ({Count} registry views).", exeName, paths.Count);
     }
 
     private void RestoreIfeo(string exeName, FocusSession session)
     {
-        try
+        foreach (var ifeoBase in IfeoRegistryPaths.All)
         {
-            using var key = Registry.LocalMachine.OpenSubKey($@"{IfeoBase}\{exeName}", writable: true);
-            if (key is null) return;
+            try
+            {
+                using var key = Registry.LocalMachine.OpenSubKey($@"{ifeoBase}\{exeName}", writable: true);
+                if (key is null) continue;
 
-            if (session.IfeoPreExistingDebuggers.TryGetValue(exeName, out var prior) && prior is not null)
-                key.SetValue(DebuggerValue, prior, RegistryValueKind.String);
-            else
-                key.DeleteValue(DebuggerValue, throwOnMissingValue: false);
+                if (session.IfeoPreExistingDebuggers.TryGetValue(exeName, out var prior) && prior is not null)
+                    key.SetValue(DebuggerValue, prior, RegistryValueKind.String);
+                else
+                    key.DeleteValue(DebuggerValue, throwOnMissingValue: false);
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "Failed to restore IFEO for {Exe} ({Base}).", exeName, ifeoBase);
+            }
+        }
 
-            log.LogDebug("IFEO restored for {Exe}.", exeName);
-        }
-        catch (Exception ex)
-        {
-            log.LogError(ex, "Failed to restore IFEO for {Exe}.", exeName);
-        }
+        log.LogDebug("IFEO restored for {Exe}.", exeName);
     }
 
     private void WriteIfeoStandalone(string exeName)
     {
-        try
+        var paths = IfeoRegistryPaths.All;
+        for (int i = 0; i < paths.Count; i++)
         {
-            using var key = Registry.LocalMachine.CreateSubKey($@"{IfeoBase}\{exeName}", writable: true);
-            if (!_screenTimeIfeoPrior.ContainsKey(exeName))
+            try
             {
-                var existing = key.GetValue(DebuggerValue) as string;
-                if (string.Equals(existing, StubPath, StringComparison.OrdinalIgnoreCase))
-                    existing = null;
-                _screenTimeIfeoPrior[exeName] = existing;
+                using var key = Registry.LocalMachine.CreateSubKey($@"{paths[i]}\{exeName}", writable: true);
+                if (i == 0 && !_screenTimeIfeoPrior.ContainsKey(exeName))
+                {
+                    var existing = key.GetValue(DebuggerValue) as string;
+                    if (string.Equals(existing, StubPath, StringComparison.OrdinalIgnoreCase))
+                        existing = null;
+                    _screenTimeIfeoPrior[exeName] = existing;
+                }
+
+                key.SetValue(DebuggerValue, StubPath, RegistryValueKind.String);
             }
-            key.SetValue(DebuggerValue, StubPath, RegistryValueKind.String);
-            log.LogDebug("Screen-time IFEO set for {Exe}.", exeName);
+            catch (Exception ex)
+            {
+                log.LogError(ex, "Failed to write screen-time IFEO for {Exe} ({Base}).", exeName, paths[i]);
+                _screenTimeIfeoKeys.Remove(exeName);
+                return;
+            }
         }
-        catch (Exception ex)
-        {
-            log.LogError(ex, "Failed to write screen-time IFEO for {Exe}.", exeName);
-            _screenTimeIfeoKeys.Remove(exeName);
-        }
+
+        log.LogDebug("Screen-time IFEO set for {Exe}.", exeName);
     }
 
     private void RestoreIfeoStandalone(string exeName)
     {
-        try
+        foreach (var ifeoBase in IfeoRegistryPaths.All)
         {
-            using var key = Registry.LocalMachine.OpenSubKey($@"{IfeoBase}\{exeName}", writable: true);
-            if (key is null)
+            try
             {
-                _screenTimeIfeoPrior.Remove(exeName);
-                return;
+                using var key = Registry.LocalMachine.OpenSubKey($@"{ifeoBase}\{exeName}", writable: true);
+                if (key is null)
+                    continue;
+
+                if (_screenTimeIfeoPrior.TryGetValue(exeName, out var prior) && prior is not null)
+                    key.SetValue(DebuggerValue, prior, RegistryValueKind.String);
+                else
+                    key.DeleteValue(DebuggerValue, throwOnMissingValue: false);
             }
-
-            if (_screenTimeIfeoPrior.TryGetValue(exeName, out var prior) && prior is not null)
-                key.SetValue(DebuggerValue, prior, RegistryValueKind.String);
-            else
-                key.DeleteValue(DebuggerValue, throwOnMissingValue: false);
-
-            _screenTimeIfeoPrior.Remove(exeName);
-            log.LogDebug("Screen-time IFEO restored for {Exe}.", exeName);
+            catch (Exception ex)
+            {
+                log.LogError(ex, "Failed to restore screen-time IFEO for {Exe} ({Base}).", exeName, ifeoBase);
+            }
         }
-        catch (Exception ex)
-        {
-            log.LogError(ex, "Failed to restore screen-time IFEO for {Exe}.", exeName);
-        }
+
+        _screenTimeIfeoPrior.Remove(exeName);
+        log.LogDebug("Screen-time IFEO restored for {Exe}.", exeName);
     }
 }

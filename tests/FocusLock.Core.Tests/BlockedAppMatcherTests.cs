@@ -34,6 +34,21 @@ public class BlockedAppMatcherTests
     }
 
     [Fact]
+    public void MatchesAppTimeLimit_UsesRelatedExeNamesAndDisplayName()
+    {
+        var limit = new AppTimeLimit
+        {
+            DisplayName = "Geekbench 6",
+            ExeName = "Geekbench 6.exe",
+            ExeNames = ["Geekbench6.exe", "Geekbench 6.exe"]
+        };
+
+        Assert.True(BlockedAppMatcher.MatchesAppTimeLimit("Geekbench6.exe", limit));
+        Assert.True(BlockedAppMatcher.MatchesAppTimeLimit("geekbench6.exe", limit));
+        Assert.False(BlockedAppMatcher.MatchesAppTimeLimit("notepad.exe", limit));
+    }
+
+    [Fact]
     public void IsProtectedFromBlocking_RejectsWindowsSystem32()
     {
         var system32 = Path.Combine(

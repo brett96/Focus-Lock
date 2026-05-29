@@ -20,6 +20,7 @@ public partial class SetupViewModel : ObservableObject
 {
     private readonly ServiceClient _client;
     private readonly NavigationService _nav;
+    private readonly Task _screenTimeConfigLoadTask;
 
     // ── Session mode ──────────────────────────────────────────────────────────
 
@@ -243,6 +244,8 @@ public partial class SetupViewModel : ObservableObject
 
     [ObservableProperty] private string _stDraftDisplayName = string.Empty;
 
+    private List<string>? _stDraftExeNames;
+
     public bool StHasDraftExe => !string.IsNullOrEmpty(StDraftExeName);
 
     [ObservableProperty]
@@ -320,7 +323,7 @@ public partial class SetupViewModel : ObservableObject
         StDailyLimits.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasScreenTimeLimits));
         StAppLimits.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasScreenTimeLimits));
         _ = LoadAvailableAppsAsync();
-        _ = LoadScreenTimeConfigAsync();
+        _screenTimeConfigLoadTask = LoadScreenTimeConfigAsync();
     }
 
     private void ApplyDefaultDeadline()
@@ -453,6 +456,7 @@ public partial class SetupViewModel : ObservableObject
         StIsAddingAppLimit       = true;
         StDraftExeName           = vm.ExeName;
         StDraftDisplayName       = vm.DisplayName;
+        _stDraftExeNames         = vm.ExeNames?.ToList();
         StDraftLimitType         = vm.LimitType;
         if (vm.LimitType == AppLimitType.DailyTotal)
         {
@@ -661,7 +665,14 @@ public partial class SetupViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            await _client.SetScreenTimeConfigAsync(BuildScreenTimeConfig());
+            await _screenTimeConfigLoadTask;
+
+            var configResult = await _client.SetScreenTimeConfigAsync(BuildScreenTimeConfig());
+            if (configResult is null || !configResult.Success)
+            {
+                ErrorMessage = configResult?.ErrorMessage ?? "Failed to save screen time settings.";
+                return;
+            }
 
             var req = new StartSessionRequest(
                 SelectedMode,
@@ -771,6 +782,7 @@ public partial class SetupViewModel : ObservableObject
         StIsAddingAppLimit     = true;
         StDraftExeName        = string.Empty;
         StDraftDisplayName    = string.Empty;
+        _stDraftExeNames      = null;
         StDraftLimitType      = AppLimitType.DailyTotal;
         StDraftLimitHours     = "1";
         StDraftLimitMin       = "0";
@@ -798,6 +810,7 @@ public partial class SetupViewModel : ObservableObject
     {
         StDraftExeName        = app.ExeName;
         StDraftDisplayName    = app.DisplayName;
+        _stDraftExeNames      = app.ExeNames?.Count > 0 ? app.ExeNames.ToList() : null;
         StDraftAppSearch      = string.Empty;
         StIsDraftAppPopupOpen = false;
     }
@@ -814,6 +827,7 @@ public partial class SetupViewModel : ObservableObject
         StDraftExeName     = Path.GetFileName(dlg.FileName);
         StDraftDisplayName = FileVersionInfo.GetVersionInfo(dlg.FileName).ProductName
             ?? Path.GetFileNameWithoutExtension(dlg.FileName);
+        _stDraftExeNames   = null;
         StIsDraftAppPopupOpen = false;
     }
 
@@ -845,6 +859,7 @@ public partial class SetupViewModel : ObservableObject
             Id              = _stEditingAppLimitId ?? Guid.NewGuid().ToString("N"),
             ExeName         = StDraftExeName,
             DisplayName     = string.IsNullOrWhiteSpace(StDraftDisplayName) ? StDraftExeName : StDraftDisplayName,
+            ExeNames        = _stDraftExeNames,
             LimitType       = StDraftLimitType,
             LimitMinutes    = StDraftLimitType == AppLimitType.DailyTotal
                                   ? StParseHM(StDraftLimitHours, StDraftLimitMin)

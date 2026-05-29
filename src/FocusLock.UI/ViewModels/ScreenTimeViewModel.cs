@@ -173,6 +173,8 @@ public partial class ScreenTimeViewModel : ObservableObject
 
     [ObservableProperty] private string _draftDisplayName = string.Empty;
 
+    private List<string>? _draftExeNames;
+
     public bool HasDraftExe => !string.IsNullOrEmpty(DraftExeName);
 
     [ObservableProperty]
@@ -342,6 +344,7 @@ public partial class ScreenTimeViewModel : ObservableObject
         IsAddingAppLimit       = true;
         DraftExeName           = vm.ExeName;
         DraftDisplayName       = vm.DisplayName;
+        _draftExeNames         = vm.ExeNames?.ToList();
         DraftLimitType         = vm.LimitType;
         if (vm.LimitType == AppLimitType.DailyTotal)
             (DraftLimitHours, DraftLimitMin) = SplitMinutes(vm.LimitMinutes);
@@ -540,6 +543,7 @@ public partial class ScreenTimeViewModel : ObservableObject
         IsAddingAppLimit       = true;
         DraftExeName        = string.Empty;
         DraftDisplayName    = string.Empty;
+        _draftExeNames      = null;
         DraftLimitType      = AppLimitType.DailyTotal;
         DraftLimitHours     = "1";
         DraftLimitMin       = "0";
@@ -567,6 +571,7 @@ public partial class ScreenTimeViewModel : ObservableObject
     {
         DraftExeName     = app.ExeName;
         DraftDisplayName = app.DisplayName;
+        _draftExeNames   = app.ExeNames?.Count > 0 ? app.ExeNames.ToList() : null;
         DraftAppSearch   = string.Empty;
         IsDraftAppPopupOpen = false;
     }
@@ -583,6 +588,7 @@ public partial class ScreenTimeViewModel : ObservableObject
         DraftExeName     = Path.GetFileName(dlg.FileName);
         DraftDisplayName = FileVersionInfo.GetVersionInfo(dlg.FileName).ProductName
             ?? Path.GetFileNameWithoutExtension(dlg.FileName);
+        _draftExeNames   = null;
         IsDraftAppPopupOpen = false;
     }
 
@@ -614,6 +620,7 @@ public partial class ScreenTimeViewModel : ObservableObject
             Id              = _editingAppLimitId ?? Guid.NewGuid().ToString("N"),
             ExeName         = DraftExeName,
             DisplayName     = string.IsNullOrWhiteSpace(DraftDisplayName) ? DraftExeName : DraftDisplayName,
+            ExeNames        = _draftExeNames,
             LimitType       = DraftLimitType,
             LimitMinutes    = DraftLimitType == AppLimitType.DailyTotal
                                   ? ParseHM(DraftLimitHours, DraftLimitMin)

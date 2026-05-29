@@ -9,6 +9,7 @@ public class AppTimeLimitViewModel
     public string Id { get; }
     public string ExeName     { get; }
     public string DisplayName { get; }
+    public IReadOnlyList<string>? ExeNames { get; }
     public AppLimitType LimitType     { get; }
     public int LimitMinutes           { get; }
     public int IntervalMinutes        { get; }
@@ -25,6 +26,7 @@ public class AppTimeLimitViewModel
         Id             = model.Id;
         ExeName        = model.ExeName;
         DisplayName    = model.DisplayName;
+        ExeNames       = model.ExeNames;
         LimitType      = model.LimitType;
         LimitMinutes   = model.LimitMinutes;
         IntervalMinutes = model.IntervalMinutes;
@@ -50,6 +52,7 @@ public class AppTimeLimitViewModel
         Id              = Id,
         ExeName         = ExeName,
         DisplayName    = DisplayName,
+        ExeNames       = ExeNames?.ToList(),
         LimitType      = LimitType,
         LimitMinutes   = LimitMinutes,
         IntervalMinutes = IntervalMinutes,
