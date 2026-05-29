@@ -1,6 +1,6 @@
 # Focus Lock
 
-**Current version:** 1.2.0
+**Current version:** 1.2.1
 
 Focus Lock is a **Windows self-focus assistant app**: you start a timed “focus session” that **blocks chosen apps and websites until a deadline**. The app is designed so that the **privileged enforcement** happens in a Windows Service running as **LocalSystem**, while the UI is a normal desktop app that talks to the service over IPC.
 
@@ -133,8 +133,8 @@ The canonical version lives in **`Version.props`** at the repository root:
 
 | Property | Example | Used for |
 |----------|---------|----------|
-| `FocusLockVersion` | `1.2.0` | Semver (docs, informational version) |
-| `FocusLockAssemblyVersion` | `1.2.0.0` | Assemblies, file version, MSI `Package/@Version` |
+| `FocusLockVersion` | `1.2.1` | Semver (docs, informational version) |
+| `FocusLockAssemblyVersion` | `1.2.1.0` | Assemblies, file version, MSI `Package/@Version` |
 
 **Semver rules (consistent bumps):**
 
@@ -144,7 +144,7 @@ The canonical version lives in **`Version.props`** at the repository root:
 | New features, backward compatible | **MINOR** (reset patch to `0`) | `1.1.2` → `1.2.0` |
 | Breaking changes or major redesign | **MAJOR** (reset minor/patch to `0`) | `1.2.3` → `2.0.0` |
 
-When bumping, update **both** properties in `Version.props` so the semver and four-part values stay aligned (`1.2.0` ↔ `1.2.0.0`).
+When bumping, update **both** properties in `Version.props` so the semver and four-part values stay aligned (`1.2.1` ↔ `1.2.1.0`).
 
 **What updates automatically** (via `Version.props` imports):
 
