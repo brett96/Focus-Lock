@@ -1,0 +1,10 @@
+<Project>
+  <Import Project="$(MSBuildThisFileDirectory)Version.props" />
+
+  <PropertyGroup>
+    <Version>$(FocusLockVersion)</Version>
+    <AssemblyVersion>$(FocusLockAssemblyVersion)</AssemblyVersion>
+    <FileVersion>$(FocusLockAssemblyVersion)</FileVersion>
+    <InformationalVersion>$(FocusLockVersion)</InformationalVersion>
+  </PropertyGroup>
+</Project>

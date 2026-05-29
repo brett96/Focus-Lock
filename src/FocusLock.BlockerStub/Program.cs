@@ -40,7 +40,7 @@ static async Task ShowToastAsync(string title, string body)
     await Task.Delay(600);
 }
 
-static async Task<IsBlockedResponse?> QueryIsBlockedAsync(string exeName)
+static async Task<IsBlockedResponse?> QueryIsBlockedAsync(string exeName, string? exePath = null)
 {
     for (int attempt = 0; attempt < PipeConstants.IpcRetryAttempts; attempt++)
     {
@@ -53,7 +53,7 @@ static async Task<IsBlockedResponse?> QueryIsBlockedAsync(string exeName)
                 PipeDirection.InOut, PipeOptions.Asynchronous);
 
             await pipe.ConnectAsync(PipeConstants.ConnectTimeoutMs);
-            var request = PipeFraming.BuildRequest(PipeConstants.IsBlocked, new IsBlockedRequest(exeName));
+            var request = PipeFraming.BuildRequest(PipeConstants.IsBlocked, new IsBlockedRequest(exeName, exePath));
             await PipeFraming.WriteMessageAsync(pipe, request);
             var reply = await PipeFraming.ReadMessageAsync(pipe);
             if (reply is null) continue;
@@ -86,13 +86,14 @@ if (args.Length >= 1 && args[0] == "--notify")
 }
 
 // IFEO mode: args[0] is the path to the originally-requested executable (passed by Windows).
-string exeName = args.Length > 0 ? Path.GetFileName(args[0]) : string.Empty;
+string exePath = args.Length > 0 ? args[0] : string.Empty;
+string exeName = !string.IsNullOrEmpty(exePath) ? Path.GetFileName(exePath) : string.Empty;
 if (string.IsNullOrEmpty(exeName))
     return;
 
 try
 {
-    var response = await QueryIsBlockedAsync(exeName);
+    var response = await QueryIsBlockedAsync(exeName, exePath);
     if (response?.IsBlocked != true)
         return;
 

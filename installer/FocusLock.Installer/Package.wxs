@@ -14,7 +14,7 @@
      xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
 
   <Package Name="Focus Lock"
-           Version="1.0.0.0"
+           Version="$(FocusLockAssemblyVersion)"
            Manufacturer="Focus Lock"
            UpgradeCode="A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A1B"
            Scope="perMachine">
@@ -22,8 +22,17 @@
     <SummaryInformation Description="Focus Lock Setup — Self parental control for Windows" />
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- Automatically remove older versions on upgrade. -->
-    <MajorUpgrade DowngradeErrorMessage="A newer version of Focus Lock is already installed. Please uninstall it first." />
+    <!--
+      In-place major upgrade: same UpgradeCode + higher Package/@Version removes the
+      previous MSI (including stopping/removing FocusLockService) before installing
+      new files. Does NOT install a second copy side-by-side.
+      Schedule=afterInstallValidate (WiX default): fully uninstall old product first.
+    -->
+    <MajorUpgrade Schedule="afterInstallValidate"
+                  DowngradeErrorMessage="A newer version of Focus Lock is already installed. Please uninstall it first."
+                  AllowSameVersionUpgrades="no"
+                  IgnoreRemoveFailure="no"
+                  MigrateFeatures="yes" />
 
     <!-- Windows 10 1809+ (build 17763) or Windows 11 — matches app target and .NET 9 desktop support. -->
     <Property Id="WINDOWSBUILD" Secure="yes">
@@ -61,8 +70,8 @@
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="FocusLock">
 
-        <!-- Service executable with service registration. -->
-        <Component Id="ServiceExeComponent" Guid="*">
+        <!-- Stable component GUIDs — required for reliable major upgrades across versions. -->
+        <Component Id="ServiceExeComponent" Guid="A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A01">
           <File Id="ServiceExe" Name="FocusLock.Service.exe"
                 Source="..\..\publish\service-exe\FocusLock.Service.exe" KeyPath="yes" />
 
@@ -74,8 +83,10 @@
                          Start="auto"
                          ErrorControl="normal"
                          Account="LocalSystem"
-                         Interactive="no" />
+                         Interactive="no"
+                         Vital="yes" />
 
+          <!-- Stop before file replace on upgrade; remove service only on full uninstall. -->
           <ServiceControl Id="FocusLockServiceControl"
                          Name="FocusLockService"
                          Start="install"
@@ -98,7 +109,7 @@
         </Component>
 
         <!-- Allow the service to start in Windows Safe Mode (Minimal). -->
-        <Component Id="SafeBootRegistry" Guid="*">
+        <Component Id="SafeBootRegistry" Guid="A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A02">
           <RegistryKey Root="HKLM"
                       Key="SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\FocusLockService">
             <RegistryValue Type="string" Value="Service" KeyPath="yes" />
@@ -106,7 +117,7 @@
         </Component>
 
         <!-- Windows Event Log source so the service can write structured logs. -->
-        <Component Id="EventLogSource" Guid="*">
+        <Component Id="EventLogSource" Guid="A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A03">
           <RegistryKey Root="HKLM"
                       Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\FocusLock">
             <RegistryValue Type="string" Name="EventMessageFile"
@@ -121,7 +132,7 @@
     <!-- ── C:\ProgramData\FocusLock\ ───────────────────────────────────────── -->
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="FocusLockDataDir" Name="FocusLock">
-        <Component Id="DataDirectory" Guid="*">
+        <Component Id="DataDirectory" Guid="A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A04">
           <CreateFolder />
           <RegistryValue Root="HKCU" Key="Software\FocusLock\Install"
                         Name="DataDir" Type="integer" Value="1" KeyPath="yes" />
@@ -132,7 +143,7 @@
     <!-- ── Start Menu shortcut ──────────────────────────────────────────────── -->
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="FocusLockMenuDir" Name="Focus Lock">
-        <Component Id="StartMenuShortcut" Guid="*">
+        <Component Id="StartMenuShortcut" Guid="A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A05">
           <Shortcut Id="AppShortcut" Name="Focus Lock"
                     Description="Stay focused. Get it done."
                     Target="[INSTALLFOLDER]FocusLock.UI.exe"

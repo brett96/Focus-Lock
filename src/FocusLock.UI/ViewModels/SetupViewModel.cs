@@ -356,21 +356,21 @@ public partial class SetupViewModel : ObservableObject
     {
         if (e.PropertyName != nameof(SelectableApp.IsSelected) || sender is not SelectableApp app) return;
 
-        var sameExe = AvailableApps
-            .Where(a => string.Equals(a.ExeName, app.ExeName, StringComparison.OrdinalIgnoreCase))
+        var sameDisplayName = AvailableApps
+            .Where(a => string.Equals(a.DisplayName, app.DisplayName, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         if (app.IsSelected)
         {
-            SetSelectableSelected(sameExe, selected: true);
-            if (!BlockedApps.Any(a => string.Equals(a.ExeName, app.ExeName, StringComparison.OrdinalIgnoreCase)))
-                BlockedApps.Add(new BlockedApp(app.DisplayName, app.ExeName));
+            SetSelectableSelected(sameDisplayName, selected: true);
+            if (!BlockedApps.Any(a => string.Equals(a.DisplayName, app.DisplayName, StringComparison.OrdinalIgnoreCase)))
+                BlockedApps.Add(new BlockedApp(app.DisplayName, app.ExeName, app.ExeNames));
         }
         else
         {
-            SetSelectableSelected(sameExe, selected: false);
+            SetSelectableSelected(sameDisplayName, selected: false);
             var existing = BlockedApps.FirstOrDefault(a =>
-                string.Equals(a.ExeName, app.ExeName, StringComparison.OrdinalIgnoreCase));
+                string.Equals(a.DisplayName, app.DisplayName, StringComparison.OrdinalIgnoreCase));
             if (existing is not null)
                 BlockedApps.Remove(existing);
         }
@@ -521,7 +521,7 @@ public partial class SetupViewModel : ObservableObject
     private void RemoveApp(BlockedApp app)
     {
         var selectables = AvailableApps
-            .Where(a => string.Equals(a.ExeName, app.ExeName, StringComparison.OrdinalIgnoreCase))
+            .Where(a => string.Equals(a.DisplayName, app.DisplayName, StringComparison.OrdinalIgnoreCase))
             .ToList();
         if (selectables.Count > 0)
             SetSelectableSelected(selectables, selected: false);
@@ -540,25 +540,27 @@ public partial class SetupViewModel : ObservableObject
         if (dlg.ShowDialog() != true) return;
 
         var exeName = Path.GetFileName(dlg.FileName);
-        if (SystemProcessList.IsSystemExe(exeName))
+        if (SystemProcessList.IsProtectedFromBlocking(exeName, dlg.FileName))
         {
-            ErrorMessage = $"{exeName} is a system process and cannot be blocked.";
+            ErrorMessage = $"{exeName} is a protected system application and cannot be blocked.";
             return;
         }
 
-        var selectables = AvailableApps
-            .Where(a => string.Equals(a.ExeName, exeName, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (selectables.Count > 0)
+        var productName = FileVersionInfo.GetVersionInfo(dlg.FileName).ProductName?.Trim();
+        var displayName = !string.IsNullOrWhiteSpace(productName)
+            ? productName
+            : Path.GetFileNameWithoutExtension(dlg.FileName);
+
+        var selectable = AvailableApps.FirstOrDefault(a =>
+            string.Equals(a.DisplayName, displayName, StringComparison.OrdinalIgnoreCase));
+        if (selectable is not null)
         {
-            SetSelectableSelected(selectables, selected: true);
+            selectable.IsSelected = true;
         }
         else
         {
-            var display = FileVersionInfo.GetVersionInfo(dlg.FileName).ProductName
-                ?? Path.GetFileNameWithoutExtension(dlg.FileName);
-            if (!BlockedApps.Any(a => a.ExeName.Equals(exeName, StringComparison.OrdinalIgnoreCase)))
-                BlockedApps.Add(new BlockedApp(display ?? exeName, exeName));
+            if (!BlockedApps.Any(a => string.Equals(a.DisplayName, displayName, StringComparison.OrdinalIgnoreCase)))
+                BlockedApps.Add(new BlockedApp(displayName!, exeName, [exeName]));
         }
         ErrorMessage = string.Empty;
     }

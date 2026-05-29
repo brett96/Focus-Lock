@@ -30,6 +30,25 @@ The UI and Service require Windows and admin rights to run meaningfully. The Ser
 The installer requires .NET Desktop Runtime (x64) 9.0+ on the target machine (`DotNetCompatibilityCheck` with roll-forward in Package.wxs; apps use `RollForward=Major` in Directory.Build.props) and Windows 10 build 17763+.  
 WiX SDK: `WixToolset.Sdk/5.0.2` (pulled via NuGet — no separate WiX install needed).
 
+**In-place upgrades:** `Package.wxs` uses a stable `UpgradeCode` plus `MajorUpgrade` (`Schedule="afterInstallValidate"`). Installing a newer MSI removes the previous product first (including stopping/uninstalling `FocusLockService`), then installs into the same `C:\Program Files\FocusLock\` path — not side-by-side. Manual components use fixed GUIDs for reliable upgrades.
+
+## Versioning
+
+**Current version:** 1.1.0 (see `Version.props`).
+
+**Bump the version with every user-facing change** before a release build. Edit **`Version.props`** only:
+
+- `FocusLockVersion` — semver `major.minor.patch` (e.g. `1.1.0`)
+- `FocusLockAssemblyVersion` — four-part `major.minor.patch.0` (e.g. `1.1.0.0`)
+
+Semver: **PATCH** for fixes, **MINOR** for features (reset patch to `0`), **MAJOR** for breaking changes (reset minor/patch to `0`). Always keep both properties in sync.
+
+Root `Directory.Build.props` and `src/Directory.Build.props` import `Version.props` and apply versions to SDK projects. The WiX project reads the same props (`FocusLock.Installer.wixproj` + `DefineConstants` → `Package.wxs`).
+
+**Also update manually:** `src/FocusLock.UI/app.manifest` `<assemblyIdentity version="…" />` → match `FocusLockAssemblyVersion`.
+
+Do **not** change `UpgradeCode` in the installer (required for in-place upgrades).
+
 ## Project Architecture
 
 Focus Lock is a Windows self-parental-control app: users lock themselves out of specific apps and websites until a deadline. The solution has four executables and a shared library:
@@ -161,6 +180,6 @@ When running as a registered Windows Service (`WindowsServiceHelpers.IsWindowsSe
 
 - **IFEO write/read requires SYSTEM** — always done in the Service, never the UI.
 - **Strict mode**: apply service DACL + IFEO/hosts ACL locks after blocks are applied; cleanup reverses ACLs on session end.
-- **`SystemProcessList.IsSystemExe`** must be checked in the UI before any exe is added to the block list, and in the Service before writing any IFEO key.
+- **`SystemProcessList.IsProtectedFromBlocking`** must be checked in the UI before any exe is added to the block list, and in the Service before writing any IFEO key. Session blocking uses **`BlockedAppMatcher`** so all executables for an installed application name are blocked.
 - The BlockerStub must always exit 0 and never throw — fail-open is essential since a hanging stub blocks the original process from showing any UI.
 - Session end cleanup must be idempotent — the service may call it after a crash recovery where partial cleanup already happened.

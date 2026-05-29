@@ -16,7 +16,7 @@ public record StartSessionRequest(
 
 public record EndSessionRequest(string Reason);
 
-public record IsBlockedRequest(string ExeName);
+public record IsBlockedRequest(string ExeName, string? ExePath = null);
 
 // ── Responses ─────────────────────────────────────────────────────────────────
 

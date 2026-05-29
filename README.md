@@ -1,5 +1,7 @@
 # Focus Lock
 
+**Current version:** 1.1.0
+
 Focus Lock is a **Windows self-focus assistant app**: you start a timed “focus session” that **blocks chosen apps and websites until a deadline**. The app is designed so that the **privileged enforcement** happens in a Windows Service running as **LocalSystem**, while the UI is a normal desktop app that talks to the service over IPC.
 
 ## What it does
@@ -8,7 +10,7 @@ Focus Lock is a **Windows self-focus assistant app**: you start a timed “focus
   - Uses **IFEO (Image File Execution Options)** to redirect launches of blocked executables to a tiny stub (`FocusLock.BlockerStub.exe`).
   - When a blocked app is launched, a **Windows toast** appears (via `BlockerStub` over IFEO). Each launch uses a unique toast tag so repeat attempts after dismissing still notify. IPC to the service retries on timeout.
   - The service also runs a **process monitor loop** that kills blocked processes every ~2 seconds (helps catch renamed exes and already-running apps).
-  - Apps are selected from a searchable dropdown of installed applications (Windows App Paths registry plus a scan of `Program Files` and `Program Files (x86)`). Duplicate product names show a path hint (e.g. `Google › Chrome`). A Browse button handles apps not in the list.
+  - Apps are selected from a searchable dropdown populated from the Windows **Installed applications** list (Uninstall registry — same source as Settings → Apps). One entry per application name; blocking applies to all related executables for that app. System-critical Windows processes and apps under `Windows\System32` cannot be blocked. A Browse button handles apps not in the list.
 - **Website blocking**
   - The service appends a sentinel block to the Windows **hosts file** (`C:\Windows\System32\drivers\etc\hosts`), redirecting blocked domains to `127.0.0.1`, and flushes DNS.
   - A lightweight HTTP server runs on port 80 for the duration of the session. When a blocked site is visited over **HTTP**, the browser shows a styled block page and a **Windows toast** is shown via `BlockerStub` (debounced ~5 seconds per domain). **HTTPS** visits are still blocked via the hosts file but cannot show the block page or toast without TLS interception.
@@ -122,6 +124,46 @@ The stub also accepts `--notify <domain> <deadline>` (website block popup) and `
 
 ## Build, test, and release
 
+### Versioning
+
+**Bump the version with every user-facing update** (features, fixes, installer changes) before building a release MSI.
+
+The canonical version lives in **`Version.props`** at the repository root:
+
+| Property | Example | Used for |
+|----------|---------|----------|
+| `FocusLockVersion` | `1.1.0` | Semver (docs, informational version) |
+| `FocusLockAssemblyVersion` | `1.1.0.0` | Assemblies, file version, MSI `Package/@Version` |
+
+**Semver rules (consistent bumps):**
+
+| Change type | Bump | Example |
+|-------------|------|---------|
+| Bug fixes only, no new behavior | **PATCH** | `1.1.0` → `1.1.1` |
+| New features, backward compatible | **MINOR** (reset patch to `0`) | `1.1.2` → `1.2.0` |
+| Breaking changes or major redesign | **MAJOR** (reset minor/patch to `0`) | `1.2.3` → `2.0.0` |
+
+When bumping, update **both** properties in `Version.props` so the semver and four-part values stay aligned (`1.2.0` ↔ `1.2.0.0`).
+
+**What updates automatically** (via `Version.props` imports):
+
+- All projects under `src/` (`src/Directory.Build.props` → assembly/file/informational version)
+- Test projects and the WiX installer (repo-root `Directory.Build.props` / `FocusLock.Installer.wixproj` → MSI version)
+
+**Manual step after editing `Version.props`:**
+
+- Sync `src/FocusLock.UI/app.manifest` → `<assemblyIdentity version="…" />` must match `FocusLockAssemblyVersion` (four parts).
+
+**Verify after bumping:**
+
+```powershell
+dotnet build FocusLock.sln -c Release
+# Optional: inspect a built exe
+[System.Diagnostics.FileVersionInfo]::GetVersionInfo("src\FocusLock.UI\bin\Release\net9.0-windows10.0.17763.0\FocusLock.UI.exe").FileVersion
+```
+
+Then run `.\build\build.ps1` to produce the versioned MSI.
+
 ### Prerequisites
 
 - Windows 10 version **1809** (build 17763) or later, or Windows 11 (**64-bit**)
@@ -185,7 +227,27 @@ After editing code, rebuild the publish output and installer with:
 .\build\build.ps1
 ```
 
-Then reinstall the updated MSI to pick up the changes in the installed application.
+Then reinstall the updated MSI to pick up the changes in the installed application (see **Upgrading an existing install** below).
+
+### Upgrading an existing install
+
+Running a newer `Focus Lock.msi` over an older install **replaces it in place** — it does **not** install a second copy under a different folder or leave two entries in Settings → Apps.
+
+How it works:
+
+1. All releases share the same **`UpgradeCode`** (never change this GUID).
+2. Each release has a unique **`ProductCode`** and a higher **`Package` version** (from `Version.props`).
+3. WiX **`MajorUpgrade`** (`Schedule="afterInstallValidate"`) detects the older product, **fully uninstalls 1.0.0** (stops and removes `FocusLockService`, replaces files under `C:\Program Files\FocusLock\`), then installs 1.1.0.
+
+User data in `C:\ProgramData\FocusLock\` is preserved (session/screen-time config components are not removed on upgrade).
+
+To upgrade from 1.0.0 to 1.1.0: run the 1.1.0 MSI as administrator — no manual uninstall required. If upgrade fails (e.g. service locked), stop the service first:
+
+```powershell
+sc stop FocusLockService
+```
+
+Then run the MSI again.
 
 ### End-to-end testing with the service
 
@@ -196,7 +258,7 @@ To test the full stack (UI + service enforcing blocks):
    - This installs everything to `C:\Program Files\FocusLock\` and starts the service automatically.
    - The source code directory is **not needed** after installation.
 3. Launch **Focus Lock** from the Start menu (UAC prompt expected).
-4. To update after further code changes: run `build.ps1` again and reinstall the MSI.
+4. To update after further code changes: run `build.ps1` again and reinstall the MSI (in-place upgrade).
 
 ### The MSI is the standalone distributable
 

@@ -19,21 +19,18 @@ public class AppBlocker(ILogger log)
   private readonly Dictionary<string, string?> _screenTimeIfeoPrior = new(StringComparer.OrdinalIgnoreCase);
 
     public static bool IsSystemExe(string exeName) =>
-        SystemProcessList.IsSystemExe(exeName);
+        SystemProcessList.IsProtectedFromBlocking(exeName);
 
     public void Apply(FocusSession session)
     {
-        foreach (var app in session.BlockedApps)
-        {
-            if (IsSystemExe(app.ExeName)) continue;
-            WriteIfeo(app.ExeName, session);
-        }
+        foreach (var exeName in EnumerateBlockableExeNames(session))
+            WriteIfeo(exeName, session);
     }
 
     public void Remove(FocusSession session)
     {
-        foreach (var app in session.BlockedApps)
-            RestoreIfeo(app.ExeName, session);
+        foreach (var exeName in EnumerateBlockableExeNames(session))
+            RestoreIfeo(exeName, session);
     }
 
     public void KillRunningBlockedApps(FocusSession session)
@@ -45,8 +42,11 @@ public class AppBlocker(ILogger log)
             {
                 try
                 {
+                    string? fullPath = null;
+                    try { fullPath = proc.MainModule?.FileName; } catch { }
+
                     var exeName = proc.ProcessName + ".exe";
-                    if (session.BlockedApps.Any(a => string.Equals(a.ExeName, exeName, StringComparison.OrdinalIgnoreCase)))
+                    if (IsSessionBlockedExe(session, exeName, fullPath))
                     {
                         proc.Kill();
                         log.LogInformation("Killed blocked process: {Name} (PID {Pid})", proc.ProcessName, proc.Id);
@@ -64,21 +64,20 @@ public class AppBlocker(ILogger log)
 
     public void VerifyAndRepairIfeo(FocusSession session)
     {
-        foreach (var app in session.BlockedApps)
+        foreach (var exeName in EnumerateBlockableExeNames(session))
         {
-            if (IsSystemExe(app.ExeName)) continue;
             try
             {
                 using var key = Registry.LocalMachine.OpenSubKey(
-                    $@"{IfeoBase}\{app.ExeName}", writable: false);
+                    $@"{IfeoBase}\{exeName}", writable: false);
 
                 var current = key?.GetValue(DebuggerValue) as string;
                 if (!string.Equals(current, StubPath, StringComparison.OrdinalIgnoreCase))
-                    WriteIfeo(app.ExeName, session);
+                    WriteIfeo(exeName, session);
             }
             catch (Exception ex)
             {
-                log.LogError(ex, "Failed to verify IFEO for {Exe}.", app.ExeName);
+                log.LogError(ex, "Failed to verify IFEO for {Exe}.", exeName);
             }
         }
     }
@@ -93,13 +92,12 @@ public class AppBlocker(ILogger log)
         var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
         const RegistryRights denyMask = RegistryRights.SetValue | RegistryRights.Delete
                                       | RegistryRights.ChangePermissions;
-        foreach (var app in session.BlockedApps)
+        foreach (var exeName in EnumerateBlockableExeNames(session))
         {
-            if (IsSystemExe(app.ExeName)) continue;
             try
             {
                 using var key = Registry.LocalMachine.OpenSubKey(
-                    $@"{IfeoBase}\{app.ExeName}",
+                    $@"{IfeoBase}\{exeName}",
                     RegistryKeyPermissionCheck.ReadWriteSubTree,
                     RegistryRights.ChangePermissions | RegistryRights.ReadPermissions);
                 if (key is null) continue;
@@ -110,11 +108,11 @@ public class AppBlocker(ILogger log)
                     InheritanceFlags.None, PropagationFlags.None,
                     AccessControlType.Deny));
                 key.SetAccessControl(sec);
-                log.LogDebug("IFEO ACL locked for {Exe}.", app.ExeName);
+                log.LogDebug("IFEO ACL locked for {Exe}.", exeName);
             }
             catch (Exception ex)
             {
-                log.LogWarning(ex, "Failed to lock IFEO ACL for {Exe}.", app.ExeName);
+                log.LogWarning(ex, "Failed to lock IFEO ACL for {Exe}.", exeName);
             }
         }
     }
@@ -126,13 +124,12 @@ public class AppBlocker(ILogger log)
     public void UnlockIfeoAcls(FocusSession session)
     {
         var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-        foreach (var app in session.BlockedApps)
+        foreach (var exeName in EnumerateBlockableExeNames(session))
         {
-            if (IsSystemExe(app.ExeName)) continue;
             try
             {
                 using var key = Registry.LocalMachine.OpenSubKey(
-                    $@"{IfeoBase}\{app.ExeName}",
+                    $@"{IfeoBase}\{exeName}",
                     RegistryKeyPermissionCheck.ReadWriteSubTree,
                     RegistryRights.ChangePermissions | RegistryRights.ReadPermissions);
                 if (key is null) continue;
@@ -147,11 +144,11 @@ public class AppBlocker(ILogger log)
                 foreach (var rule in toRemove)
                     sec.RemoveAccessRule(rule);
                 key.SetAccessControl(sec);
-                log.LogDebug("IFEO ACL unlocked for {Exe}.", app.ExeName);
+                log.LogDebug("IFEO ACL unlocked for {Exe}.", exeName);
             }
             catch (Exception ex)
             {
-                log.LogWarning(ex, "Failed to unlock IFEO ACL for {Exe}.", app.ExeName);
+                log.LogWarning(ex, "Failed to unlock IFEO ACL for {Exe}.", exeName);
             }
         }
     }
@@ -163,10 +160,8 @@ public class AppBlocker(ILogger log)
     /// <summary>Redirects launches to the blocker stub when an app has hit a screen-time limit.</summary>
     public void ApplyScreenTimeBlock(string exeName, FocusSession? session)
     {
-        if (IsSystemExe(exeName)) return;
-        if (session?.BlockedApps.Any(a =>
-                string.Equals(a.ExeName, exeName, StringComparison.OrdinalIgnoreCase)) == true)
-            return;
+        if (SystemProcessList.IsProtectedFromBlocking(exeName)) return;
+        if (IsSessionBlockedExe(session, exeName)) return;
         if (!_screenTimeIfeoKeys.Add(exeName)) return;
         WriteIfeoStandalone(exeName);
     }
@@ -174,9 +169,7 @@ public class AppBlocker(ILogger log)
     public void RemoveScreenTimeBlock(string exeName, FocusSession? session)
     {
         if (!_screenTimeIfeoKeys.Remove(exeName)) return;
-        if (session?.BlockedApps.Any(a =>
-                string.Equals(a.ExeName, exeName, StringComparison.OrdinalIgnoreCase)) == true)
-            return;
+        if (IsSessionBlockedExe(session, exeName)) return;
         RestoreIfeoStandalone(exeName);
     }
 
@@ -225,6 +218,24 @@ public class AppBlocker(ILogger log)
         }
         catch (Exception ex) { log.LogError(ex, "Failed to enumerate IFEO keys for reset."); }
     }
+
+    private static IEnumerable<string> EnumerateBlockableExeNames(FocusSession session)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var app in session.BlockedApps)
+        {
+            foreach (var exeName in app.GetExeNamesToBlock())
+            {
+                if (SystemProcessList.IsProtectedFromBlocking(exeName))
+                    continue;
+                if (seen.Add(exeName))
+                    yield return exeName;
+            }
+        }
+    }
+
+    private static bool IsSessionBlockedExe(FocusSession? session, string exeName, string? fullPath = null)
+        => session?.BlockedApps.Any(a => BlockedAppMatcher.IsBlocked(exeName, a, fullPath)) == true;
 
     private void WriteIfeo(string exeName, FocusSession session)
     {

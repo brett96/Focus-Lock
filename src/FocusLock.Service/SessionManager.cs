@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using FocusLock.Core.Blocking;
 using FocusLock.Core.Ipc;
 using FocusLock.Core.Models;
 using FocusLock.Core.Storage;
@@ -130,6 +131,16 @@ public class SessionManager
         if (req.Mode == SessionMode.Strict && !req.ConsentGiven)
             return new AckResponse(false, "Consent required for Strict mode.");
 
+        foreach (var app in req.Apps)
+        {
+            foreach (var exe in app.GetExeNamesToBlock())
+            {
+                if (SystemProcessList.IsProtectedFromBlocking(exe))
+                    return new AckResponse(false,
+                        $"{app.DisplayName} is a protected system application and cannot be blocked.");
+            }
+        }
+
         await _sessionLock.WaitAsync(ct);
         try
         {
@@ -207,7 +218,7 @@ public class SessionManager
             return screenTimeBlock;
 
         var match = _session.BlockedApps.FirstOrDefault(a =>
-            string.Equals(a.ExeName, req.ExeName, StringComparison.OrdinalIgnoreCase));
+            BlockedAppMatcher.IsBlocked(req.ExeName, a, req.ExePath));
 
         return match is not null
             ? new IsBlockedResponse(

@@ -4,9 +4,11 @@
     <OutputName>Focus Lock</OutputName>
     <!-- Keep UpgradeCode stable across all versions. Never change this GUID. -->
     <UpgradeCode>A7B3C5D8-F2E1-4A6F-9B2E-C8D34F5E6A1B</UpgradeCode>
-    <Version>1.0.0</Version>
+    <!-- Version comes from repo-root Version.props via Directory.Build.props -->
+    <Version>$(FocusLockVersion)</Version>
     <Manufacturer>Focus Lock</Manufacturer>
     <InstallerPlatform>x64</InstallerPlatform>
+    <DefineConstants>$(DefineConstants);FocusLockAssemblyVersion=$(FocusLockAssemblyVersion)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

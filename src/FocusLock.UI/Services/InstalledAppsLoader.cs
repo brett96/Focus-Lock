@@ -6,226 +6,308 @@ using Microsoft.Win32;
 
 namespace FocusLock.UI.Services;
 
+/// <summary>
+/// Builds an installed-applications list from the Windows Uninstall registry (same source as Settings → Apps).
+/// One entry per display name; related executables are grouped for blocking.
+/// </summary>
 public static class InstalledAppsLoader
 {
-    private static readonly string[] ProgramFilesRoots =
+    private static readonly (RegistryHive Hive, RegistryView View, string SubKey)[] UninstallSources =
     [
-        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+        (RegistryHive.LocalMachine, RegistryView.Registry64,
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (RegistryHive.LocalMachine, RegistryView.Registry32,
+            @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (RegistryHive.CurrentUser, RegistryView.Default,
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
     ];
-
-    private static readonly HashSet<string> SkipDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "WindowsApps",
-        "Common Files",
-        "Microsoft SDKs",
-        "dotnet",
-        "Package Cache",
-        "Reference Assemblies",
-        "Windows NT",
-        "ModifiableWindowsApps",
-        "MSBuild",
-        "Windows Kits",
-        "Microsoft Visual Studio",
-        "Microsoft SQL Server",
-        "Internet Explorer",
-        "WindowsPowerShell",
-    };
-
-    private const int ProgramFilesMaxDepth = 4;
 
     public static Task<List<SelectableApp>> LoadAsync() => Task.Run(Load);
 
     public static List<SelectableApp> Load()
     {
-        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var entries   = new List<AppEntry>();
+        var byDisplayName = new Dictionary<string, AppEntry>(StringComparer.OrdinalIgnoreCase);
 
-        LoadFromRegistry(seenPaths, entries);
-        LoadFromProgramFiles(seenPaths, entries);
+        foreach (var (hive, view, subKey) in UninstallSources)
+            LoadFromUninstallHive(hive, view, subKey, byDisplayName);
 
-        ApplyDisplayNameDisambiguation(entries);
-
-        return entries
+        return byDisplayName.Values
             .Select(e => new SelectableApp
             {
                 DisplayName = e.DisplayName,
-                ExeName     = e.ExeName,
-                ExePath     = e.ExePath,
+                ExeName     = e.PrimaryExeName,
+                ExePath     = e.PrimaryExePath,
+                ExeNames    = e.ExeNames.ToList(),
             })
             .OrderBy(a => a.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
-    private static void LoadFromRegistry(HashSet<string> seenPaths, List<AppEntry> entries)
+    private static void LoadFromUninstallHive(
+        RegistryHive hive,
+        RegistryView view,
+        string subKeyPath,
+        Dictionary<string, AppEntry> byDisplayName)
     {
-        var specs = new[]
+        try
         {
-            (RegistryHive.LocalMachine, RegistryView.Registry64),
-            (RegistryHive.LocalMachine, RegistryView.Registry32),
-            (RegistryHive.CurrentUser,  RegistryView.Default),
+            using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+            using var uninstallKey = baseKey.OpenSubKey(subKeyPath);
+            if (uninstallKey is null) return;
+
+            foreach (var keyName in uninstallKey.GetSubKeyNames())
+            {
+                try
+                {
+                    using var sub = uninstallKey.OpenSubKey(keyName);
+                    if (sub is null || ShouldSkipUninstallEntry(sub)) continue;
+
+                    var displayName = (sub.GetValue("DisplayName") as string)?.Trim();
+                    if (string.IsNullOrWhiteSpace(displayName)) continue;
+
+                    var installLocation = NormalizePath(sub.GetValue("InstallLocation") as string);
+                    var primaryPath     = ResolvePrimaryExecutable(sub, displayName, installLocation);
+                    if (primaryPath is null) continue;
+                    if (SystemProcessList.IsProtectedFromBlocking(Path.GetFileName(primaryPath), primaryPath))
+                        continue;
+
+                    var exeNames = CollectRelatedExeNames(displayName, primaryPath, installLocation);
+
+                    if (byDisplayName.TryGetValue(displayName, out var existing))
+                        MergeEntry(existing, primaryPath, exeNames);
+                    else
+                        byDisplayName[displayName] = CreateEntry(displayName, primaryPath, exeNames);
+                }
+                catch { }
+            }
+        }
+        catch { }
+    }
+
+    private static bool ShouldSkipUninstallEntry(RegistryKey key)
+    {
+        if (GetDword(key, "SystemComponent") == 1) return true;
+        if (GetDword(key, "NoDisplay") == 1) return true;
+        if (key.GetValue("ParentKeyName") is string parent && !string.IsNullOrWhiteSpace(parent))
+            return true;
+
+        var name = (key.GetValue("DisplayName") as string)?.Trim() ?? string.Empty;
+        if (name.StartsWith("KB", StringComparison.OrdinalIgnoreCase) && name.Contains("Security Update"))
+            return true;
+        if (name.StartsWith("Update for", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    }
+
+    private static AppEntry CreateEntry(string displayName, string primaryPath, HashSet<string> exeNames)
+    {
+        var entry = new AppEntry
+        {
+            DisplayName    = displayName,
+            PrimaryExePath = primaryPath,
+            PrimaryExeName = Path.GetFileName(primaryPath),
+        };
+        foreach (var exe in exeNames)
+            entry.ExeNames.Add(exe);
+        return entry;
+    }
+
+    private static void MergeEntry(AppEntry existing, string primaryPath, HashSet<string> exeNames)
+    {
+        foreach (var exe in exeNames)
+            existing.ExeNames.Add(exe);
+
+        // Prefer an entry whose primary exe lives outside Windows and has a valid path.
+        if (ShouldPreferPrimary(primaryPath, existing.PrimaryExePath))
+        {
+            existing.PrimaryExePath = primaryPath;
+            existing.PrimaryExeName = Path.GetFileName(primaryPath);
+        }
+    }
+
+    private static bool ShouldPreferPrimary(string candidate, string current)
+    {
+        if (!File.Exists(current) && File.Exists(candidate))
+            return true;
+
+        bool candidateProtected = SystemProcessList.IsProtectedFromBlocking(
+            Path.GetFileName(candidate), candidate);
+        bool currentProtected = SystemProcessList.IsProtectedFromBlocking(
+            Path.GetFileName(current), current);
+
+        if (currentProtected && !candidateProtected)
+            return true;
+
+        return false;
+    }
+
+    private static HashSet<string> CollectRelatedExeNames(
+        string displayName,
+        string primaryPath,
+        string? installLocation)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            Path.GetFileName(primaryPath),
         };
 
-        foreach (var (hive, view) in specs)
-        {
-            try
-            {
-                using var baseKey  = RegistryKey.OpenBaseKey(hive, view);
-                using var appPaths = baseKey.OpenSubKey(
-                    @"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths");
-                if (appPaths is null) continue;
+        var primaryProduct = BlockedAppMatcher.TryGetProductName(primaryPath) ?? displayName;
 
-                foreach (var keyName in appPaths.GetSubKeyNames())
-                {
-                    try
-                    {
-                        using var sub     = appPaths.OpenSubKey(keyName);
-                        var       exePath = (sub?.GetValue(string.Empty) as string)?.Trim().Trim('"');
-                        TryAddEntry(seenPaths, entries, exePath);
-                    }
-                    catch { }
-                }
-            }
-            catch { }
-        }
+        if (!string.IsNullOrWhiteSpace(installLocation) && Directory.Exists(installLocation))
+            ScanInstallFolder(installLocation, displayName, primaryProduct, names, depth: 0);
+
+        return names;
     }
 
-    private static void LoadFromProgramFiles(HashSet<string> seenPaths, List<AppEntry> entries)
-    {
-        foreach (var root in ProgramFilesRoots)
-        {
-            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-                continue;
-
-            try
-            {
-                ScanProgramFilesDirectory(root, depth: 0, seenPaths, entries);
-            }
-            catch { }
-        }
-    }
-
-    private static void ScanProgramFilesDirectory(
+    private static void ScanInstallFolder(
         string directory,
-        int depth,
-        HashSet<string> seenPaths,
-        List<AppEntry> entries)
+        string displayName,
+        string primaryProduct,
+        HashSet<string> names,
+        int depth)
     {
-        if (depth > ProgramFilesMaxDepth)
-            return;
+        if (depth > 2) return;
 
         try
         {
             foreach (var exePath in Directory.EnumerateFiles(directory, "*.exe"))
-                TryAddEntry(seenPaths, entries, exePath);
+            {
+                if (SystemProcessList.IsProtectedFromBlocking(Path.GetFileName(exePath), exePath))
+                    continue;
+
+                var product = BlockedAppMatcher.TryGetProductName(exePath);
+                if (BlockedAppMatcher.ApplicationNameMatches(product, displayName)
+                    || BlockedAppMatcher.ApplicationNameMatches(product, primaryProduct)
+                    || BlockedAppMatcher.ApplicationNameMatches(
+                        Path.GetFileNameWithoutExtension(exePath), displayName))
+                {
+                    names.Add(Path.GetFileName(exePath));
+                }
+            }
         }
         catch { }
 
-        if (depth == ProgramFilesMaxDepth)
-            return;
+        if (depth == 2) return;
 
         try
         {
             foreach (var subDir in Directory.EnumerateDirectories(directory))
-            {
-                var name = Path.GetFileName(subDir);
-                if (string.IsNullOrEmpty(name) || SkipDirectoryNames.Contains(name))
-                    continue;
-
-                ScanProgramFilesDirectory(subDir, depth + 1, seenPaths, entries);
-            }
+                ScanInstallFolder(subDir, displayName, primaryProduct, names, depth + 1);
         }
         catch { }
     }
 
-    private static void TryAddEntry(HashSet<string> seenPaths, List<AppEntry> entries, string? exePath)
+    private static string? ResolvePrimaryExecutable(
+        RegistryKey key,
+        string displayName,
+        string? installLocation)
     {
-        if (string.IsNullOrWhiteSpace(exePath))
-            return;
+        foreach (var candidate in EnumerateExecutableCandidates(key, displayName, installLocation))
+        {
+            if (!File.Exists(candidate)) continue;
+            if (!candidate.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
+            if (SystemProcessList.IsProtectedFromBlocking(Path.GetFileName(candidate), candidate))
+                continue;
+            return candidate;
+        }
 
+        return null;
+    }
+
+    private static IEnumerable<string> EnumerateExecutableCandidates(
+        RegistryKey key,
+        string displayName,
+        string? installLocation)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var path in new[]
+                 {
+                     ExtractExecutablePath(key.GetValue("DisplayIcon") as string),
+                     ExtractExecutablePath(key.GetValue("QuietUninstallString") as string),
+                     ExtractExecutablePath(key.GetValue("UninstallString") as string),
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            if (seen.Add(path))
+                yield return path;
+        }
+
+        if (string.IsNullOrWhiteSpace(installLocation) || !Directory.Exists(installLocation))
+            yield break;
+
+        var safeName = SanitizeForFileName(displayName);
+        foreach (var guess in new[]
+                 {
+                     Path.Combine(installLocation, safeName + ".exe"),
+                     Path.Combine(installLocation, displayName + ".exe"),
+                 })
+        {
+            if (seen.Add(guess))
+                yield return guess;
+        }
+
+        var installExes = new List<string>();
         try
         {
-            exePath = Path.GetFullPath(exePath);
+            installExes.AddRange(Directory.EnumerateFiles(installLocation, "*.exe"));
         }
-        catch
+        catch { }
+
+        foreach (var exe in installExes)
         {
-            return;
-        }
-
-        if (!File.Exists(exePath) || !seenPaths.Add(exePath))
-            return;
-
-        var exeName = Path.GetFileName(exePath);
-        if (SystemProcessList.IsSystemExe(exeName))
-            return;
-
-        var baseName = FileVersionInfo.GetVersionInfo(exePath).ProductName;
-        if (string.IsNullOrWhiteSpace(baseName))
-            baseName = Path.GetFileNameWithoutExtension(exeName);
-
-        entries.Add(new AppEntry(baseName!, exeName, exePath));
-    }
-
-    internal static void ApplyDisplayNameDisambiguation(List<AppEntry> entries)
-    {
-        foreach (var group in entries.GroupBy(e => e.BaseDisplayName, StringComparer.OrdinalIgnoreCase))
-        {
-            if (group.Count() == 1)
-            {
-                group.First().DisplayName = group.First().BaseDisplayName;
-                continue;
-            }
-
-            foreach (var entry in group)
-                entry.DisplayName = $"{entry.BaseDisplayName} ({FormatLocationDescriptor(entry.ExePath)})";
+            if (seen.Add(exe))
+                yield return exe;
         }
     }
 
-    internal static string FormatLocationDescriptor(string exePath)
+    private static string? ExtractExecutablePath(string? value)
     {
-        try
-        {
-            exePath = Path.GetFullPath(exePath);
-        }
-        catch
-        {
-            return Path.GetDirectoryName(exePath) ?? exePath;
-        }
+        if (string.IsNullOrWhiteSpace(value)) return null;
 
-        foreach (var root in ProgramFilesRoots.OrderByDescending(r => r.Length))
-        {
-            if (string.IsNullOrWhiteSpace(root))
-                continue;
+        value = value.Trim().Trim('"');
+        var comma = value.IndexOf(',');
+        if (comma >= 0)
+            value = value[..comma].Trim().Trim('"');
 
-            var rootFull = Path.GetFullPath(root);
-            if (!exePath.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
-                continue;
+        if (value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            return value;
 
-            var relative = exePath[rootFull.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var parts    = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (parts.Length <= 1)
-                return Path.GetFileName(rootFull);
-
-            // Drop the exe filename; keep install folder trail (e.g. Google\Chrome\Application).
-            var folderParts = parts.Length > 1 ? parts[..^1] : parts;
-            if (folderParts.Length == 0)
-                return Path.GetFileName(rootFull);
-
-            if (folderParts.Length > 2)
-                return string.Join(" › ", folderParts.Take(2));
-
-            return string.Join(" › ", folderParts);
-        }
-
-        var parent = Path.GetDirectoryName(exePath);
-        return string.IsNullOrEmpty(parent) ? exePath : parent;
+        return null;
     }
 
-    internal sealed class AppEntry(string baseDisplayName, string exeName, string exePath)
+    private static string? NormalizePath(string? path)
     {
-        public string BaseDisplayName { get; } = baseDisplayName;
-        public string ExeName         { get; } = exeName;
-        public string ExePath         { get; } = exePath;
-        public string DisplayName     { get; set; } = baseDisplayName;
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        path = path.Trim().Trim('"');
+        try { return Path.GetFullPath(path); }
+        catch { return path; }
+    }
+
+    private static string SanitizeForFileName(string name)
+    {
+        foreach (var c in Path.GetInvalidFileNameChars())
+            name = name.Replace(c, '_');
+        return name;
+    }
+
+    private static int GetDword(RegistryKey key, string name)
+    {
+        var value = key.GetValue(name);
+        return value switch
+        {
+            int i => i,
+            byte b => b,
+            _ => 0,
+        };
+    }
+
+    private sealed class AppEntry
+    {
+        public required string DisplayName { get; init; }
+        public required string PrimaryExeName { get; set; }
+        public required string PrimaryExePath { get; set; }
+        public HashSet<string> ExeNames { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 }
