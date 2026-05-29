@@ -76,7 +76,7 @@ FocusLock.sln
 
 **Website blocking**: Appends a sentinel block to `C:\Windows\System32\drivers\etc\hosts` with `0.0.0.0 domain.com` entries, then calls `ipconfig /flushdns`. On session end, restores from a backup file.
 
-**Session protection** (`SessionProtectionManager` + `FocusLockWatchdog`): Active for **all** sessions (regular and strict). (1) Service DACLs on both services deny `SERVICE_STOP`, pause, and change-config to **Administrators and LocalSystem**; poll loops re-apply if tampered. (2) Both service processes are marked **critical** (`BreakOnTermination`) — killing them can bugcheck the OS. (3) **Mutual watchdog** restarts the other service if one dies. **Strict mode** additionally: cannot end early from UI; deny-write ACLs on IFEO keys and hosts file. Skilled attackers with kernel/debugger access can still bypass critical-process and DACL defenses.
+**Session protection** (`SessionProtectionManager` + `FocusLockWatchdog`): Active for **all** sessions (regular and strict). (1) Service DACLs on both services deny `SERVICE_STOP`, pause, and change-config to **Administrators and LocalSystem**; poll loops re-apply if tampered. (2) **Mutual watchdog** restarts the other service if one dies. On session end, persist `session.json` cleared **before** `Deactivate`. Do **not** use `BreakOnTermination`/critical-process (causes bugcheck if `sc stop` runs while flag is set). Recovery: `scripts/Unlock-StuckServices.ps1` or `--unlock-for-setup`. **Strict mode** additionally: cannot end early from UI; deny-write ACLs on IFEO keys and hosts file.
 
 ### Key files
 
@@ -92,7 +92,7 @@ FocusLock.sln
 | `src/FocusLock.Service/DeadlineWatcherWorker.cs` | Ends session when deadline is reached |
 | `src/FocusLock.Service/Blocking/AppBlocker.cs` | IFEO writes, process kill, IFEO repair |
 | `src/FocusLock.Service/Blocking/WebsiteBlocker.cs` | Hosts file management |
-| `src/FocusLock.Service/Blocking/SessionProtectionManager.cs` | Session DACLs, critical process, watchdog start/stop |
+| `src/FocusLock.Service/Blocking/SessionProtectionManager.cs` | Session DACLs, watchdog start/stop |
 | `src/FocusLock.Core/Services/ServiceDaclManager.cs` | SCM DACL deny for Administrators + LocalSystem |
 | `src/FocusLock.Core/Services/ProcessProtection.cs` | Critical-process (BreakOnTermination) flag |
 | `src/FocusLock.Watchdog/WatchdogWorker.cs` | Restarts main service during any active session |
@@ -126,7 +126,7 @@ Types: `GetStatus`, `GetSessionInfo`, `StartSession`, `EndSession`, `IsBlocked`,
 
 ### Two session modes
 
-- **Regular**: User can end the session early from the dashboard (with confirmation). Service/watchdog DACLs, critical process, and mutual watchdog still apply until end.
+- **Regular**: User can end the session early from the dashboard (with confirmation). Service/watchdog DACLs and mutual watchdog still apply until end.
 - **Strict**: Session runs until deadline; UI hides End Session Early. Adds IFEO/hosts deny-write ACLs on top of session protection.
 
 ### Session start rules (UI + service)

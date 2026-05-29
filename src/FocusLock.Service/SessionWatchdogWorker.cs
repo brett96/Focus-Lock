@@ -1,5 +1,5 @@
-using FocusLock.Core.Models;
 using FocusLock.Core.Services;
+
 namespace FocusLock.Service;
 
 /// <summary>
@@ -10,13 +10,8 @@ public sealed class SessionWatchdogWorker : BackgroundService
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1.5);
 
     private readonly ILogger<SessionWatchdogWorker> _log;
-    private readonly SessionManager _manager;
 
-    public SessionWatchdogWorker(ILogger<SessionWatchdogWorker> log, SessionManager manager)
-    {
-        _log     = log;
-        _manager = manager;
-    }
+    public SessionWatchdogWorker(ILogger<SessionWatchdogWorker> log) => _log = log;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -24,10 +19,9 @@ public sealed class SessionWatchdogWorker : BackgroundService
         {
             try
             {
-                if (IsActiveSession())
+                if (ActiveSessionHelper.IsActiveSession())
                 {
                     SessionProtectionHelper.EnsureServiceProtection();
-                    ProcessProtection.TrySetCritical(true);
 
                     if (!WindowsServiceScm.IsRunning(FocusLockServiceNames.WatchdogService))
                     {
@@ -35,10 +29,6 @@ public sealed class SessionWatchdogWorker : BackgroundService
                         if (!WindowsServiceScm.TryStart(FocusLockServiceNames.WatchdogService))
                             _log.LogError("Failed to restart watchdog service.");
                     }
-                }
-                else
-                {
-                    ProcessProtection.TrySetCritical(false);
                 }
             }
             catch (Exception ex)
@@ -48,13 +38,5 @@ public sealed class SessionWatchdogWorker : BackgroundService
 
             await Task.Delay(PollInterval, stoppingToken);
         }
-    }
-
-    private bool IsActiveSession()
-    {
-        var session = _manager.Session;
-        return session is not null
-               && session.Status == SessionStatus.Active
-               && DateTime.UtcNow < session.DeadlineUtc;
     }
 }

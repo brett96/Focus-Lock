@@ -1,5 +1,13 @@
+using FocusLock.Core.Services;
 using FocusLock.Service;
 using Microsoft.Extensions.Hosting.WindowsServices;
+
+if (args is ["--unlock-for-setup"])
+{
+    var (ok, message) = SetupUnlock.RunWithDiagnostics();
+    Console.WriteLine(message);
+    return ok ? 0 : 1;
+}
 
 var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 {
@@ -28,4 +36,12 @@ if (WindowsServiceHelpers.IsWindowsService())
 }
 
 var host = builder.Build();
+
+host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(static () =>
+{
+    SessionProtectionHelper.RestoreServiceProtection();
+    ProcessProtection.TrySetCritical(false);
+});
+
 host.Run();
+return 0;

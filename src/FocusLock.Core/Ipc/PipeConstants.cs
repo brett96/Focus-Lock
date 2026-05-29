@@ -21,4 +21,5 @@ public static class PipeConstants
     public const string SetScreenTimeConfig = "SetScreenTimeConfig";
     public const string GetScreenTimeStatus = "GetScreenTimeStatus";
     public const string ForceReset = "ForceReset";
+    public const string UnlockForSetup = "UnlockForSetup";
 }

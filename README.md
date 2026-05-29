@@ -16,7 +16,7 @@ Focus Lock is a **Windows self-focus assistant app**: you start a timed “focus
   - A lightweight HTTP server runs on port 80 for the duration of the session. When a blocked site is visited over **HTTP**, the browser shows a styled block page and a **Windows toast** is shown via `BlockerStub` (debounced ~5 seconds per domain). **HTTPS** visits are still blocked via the hosts file but cannot show the block page or toast without TLS interception.
 - **Session enforcement**
   - Sessions are persisted to `C:\ProgramData\FocusLock\session.json` so the service can **recover after restart/crash** and keep enforcing until the deadline.
-  - **Service protection** (regular and strict sessions): at session start, both `FocusLockService` and `FocusLockWatchdog` get SCM DACLs that deny stop, pause, and reconfiguration to **Administrators and LocalSystem** (blocks `sc stop` and services.msc even from a PsExec SYSTEM prompt). Poll loops re-apply DACLs if tampered. Both processes are marked **critical** — forcibly killing them can bugcheck Windows. Each service polls every ~1.5s and restarts the other if killed.
+  - **Service protection** (regular and strict sessions): at session start, both `FocusLockService` and `FocusLockWatchdog` get SCM DACLs that deny stop, pause, and reconfiguration to **Administrators and LocalSystem** (blocks `sc stop` and services.msc even from a PsExec SYSTEM prompt). Poll loops re-apply DACLs if tampered. Each service polls every ~1.5s and restarts the other if killed. **Do not** use `sc stop` on these services while protection is active on older builds that marked the process critical — that can blue-screen Windows; use `scripts\Unlock-StuckServices.ps1` instead.
 - **Strict mode**
   - Locks the session so it **cannot be ended early**. Before starting, the UI shows a warning panel and requires the user to check an explicit consent checkbox.
   - Adds two more layers on top of service protection:
@@ -241,6 +241,35 @@ How it works:
 3. WiX **`MajorUpgrade`** (`Schedule="afterInstallValidate"`) detects the older product, **fully uninstalls 1.0.0** (stops and removes `FocusLockService`, replaces files under `C:\Program Files\FocusLock\`), then installs 1.1.0.
 
 User data in `C:\ProgramData\FocusLock\` is preserved (session/screen-time config components are not removed on upgrade).
+
+### Uninstall or upgrade fails with “could not be stopped”
+
+During an active focus session, the installer is blocked from stopping `FocusLockService` because service DACLs deny **stop** to Administrators (this is intentional session protection; it is **not** the watchdog being marked critical).
+
+**MSI from a build that includes the unlock custom action** runs `FocusLock.Service.exe --unlock-for-setup` automatically before stopping services.
+
+If you are stuck on an older build:
+
+1. **Build or copy a current `FocusLock.Service.exe`** (the unlock logic must match the installed service).
+2. Run in **Administrator PowerShell or CMD** (either is fine):
+
+```powershell
+& "C:\Program Files\FocusLock\FocusLock.Service.exe" --unlock-for-setup
+```
+
+The tool first asks the **running service** (over the named pipe) to end any session and remove protection safely as LocalSystem. That avoids “Access denied” when clearing strict-mode critical flags from an external admin process.
+
+If you see **Permission denied** and the PC **blue-screens** when the command exits, an older unlock build tried to **stop a process that was still marked critical** — do not run that old command again. Reboot, deploy the updated `FocusLock.Service.exe`, ensure the **Focus Lock Service** is **Running** in `services.msc`, then run `--unlock-for-setup` once more before uninstalling.
+
+If `sc.exe stop FocusLockWatchdog` returns **Access is denied**, the installed service is still an older build and may be re-applying stop-denies. Run `--unlock-for-setup` from a **new build** (project root commands above), or reset DACLs manually **as Administrator**:
+
+From the repo root, in **Administrator PowerShell**:
+
+```powershell
+.\scripts\Unlock-StuckServices.ps1
+```
+
+**Do not** chain `sc.exe stop` after `sdset` — on older strict-mode builds that can **blue-screen** the PC. Use `.\scripts\Unlock-StuckServices.ps1`, which disables the services until reboot instead of stopping them in place.
 
 To upgrade from 1.0.0 to 1.1.0: run the 1.1.0 MSI as administrator — no manual uninstall required. If upgrade fails (e.g. service locked), stop the service first:
 

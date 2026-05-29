@@ -30,7 +30,7 @@ internal static class PipeSecurityHelper
     /// Only destructive recovery requires an elevated client; session ops run in the service as SYSTEM.
     /// </summary>
     public static bool RequiresAdministrator(string messageType) =>
-        messageType is PipeConstants.ForceReset;
+        messageType is PipeConstants.ForceReset or PipeConstants.UnlockForSetup;
 
     public static bool TryGetClientIsAdministrator(NamedPipeServerStream pipe, out bool isAdmin)
     {

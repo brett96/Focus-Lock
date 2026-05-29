@@ -18,14 +18,34 @@ public static class ProcessProtection
         ref int processInformation,
         int processInformationLength);
 
+    private const uint ProcessSetInformation = 0x0200;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
     public static bool TrySetCritical(bool critical)
+        => TrySetCriticalForProcess(System.Diagnostics.Process.GetCurrentProcess().Id, critical);
+
+    public static bool TrySetCriticalForProcess(int processId, bool critical)
     {
-        int value = critical ? 1 : 0;
-        int status = NtSetInformationProcess(
-            System.Diagnostics.Process.GetCurrentProcess().Handle,
-            ProcessBreakOnTermination,
-            ref value,
-            sizeof(int));
-        return status == 0;
+        if (processId <= 0)
+            return false;
+
+        IntPtr handle = OpenProcess(ProcessSetInformation, false, processId);
+        if (handle == IntPtr.Zero)
+            return false;
+
+        try
+        {
+            int value = critical ? 1 : 0;
+            return NtSetInformationProcess(handle, ProcessBreakOnTermination, ref value, sizeof(int)) == 0;
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
     }
 }

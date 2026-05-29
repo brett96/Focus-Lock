@@ -9,6 +9,7 @@ public static class WindowsServiceScm
 {
     private const uint ScManagerConnect = 0x0001;
     private const uint ServiceQueryStatus = 0x0004;
+    private const int ScStatusProcessInfo = 0;
     private const uint ServiceStart = 0x0010;
     private const uint ServiceStop = 0x0020;
 
@@ -29,6 +30,20 @@ public static class WindowsServiceScm
         public int WaitHint;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ServiceStatusProcess
+    {
+        public int ServiceType;
+        public int CurrentState;
+        public int ControlsAccepted;
+        public int Win32ExitCode;
+        public int ServiceSpecificExitCode;
+        public int CheckPoint;
+        public int WaitHint;
+        public int ProcessId;
+        public int ServiceFlags;
+    }
+
     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint dwAccess);
 
@@ -37,6 +52,14 @@ public static class WindowsServiceScm
 
     [DllImport("advapi32.dll", SetLastError = true)]
     private static extern bool QueryServiceStatus(IntPtr hService, out ServiceStatus status);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool QueryServiceStatusEx(
+        IntPtr hService,
+        int infoLevel,
+        IntPtr lpBuffer,
+        int cbBufSize,
+        out int pcbBytesNeeded);
 
     [DllImport("advapi32.dll", SetLastError = true)]
     private static extern bool StartService(IntPtr hService, int dwNumServiceArgs, string[]? lpServiceArgVectors);
@@ -107,6 +130,47 @@ public static class WindowsServiceScm
                     return true;
 
                 return ControlService(svc, ServiceControlStop, out _);
+            }
+            finally
+            {
+                CloseServiceHandle(svc);
+            }
+        }
+        finally
+        {
+            CloseServiceHandle(scm);
+        }
+    }
+
+    public static int? TryGetProcessId(string serviceName)
+    {
+        var scm = OpenSCManager(null, null, ScManagerConnect);
+        if (scm == IntPtr.Zero)
+            return null;
+
+        try
+        {
+            var svc = OpenService(scm, serviceName, ServiceQueryStatus);
+            if (svc == IntPtr.Zero)
+                return null;
+
+            try
+            {
+                var status = new ServiceStatusProcess();
+                int size = Marshal.SizeOf<ServiceStatusProcess>();
+                IntPtr buffer = Marshal.AllocHGlobal(size);
+                try
+                {
+                    if (!QueryServiceStatusEx(svc, ScStatusProcessInfo, buffer, size, out _))
+                        return null;
+
+                    status = Marshal.PtrToStructure<ServiceStatusProcess>(buffer)!;
+                    return status.ProcessId > 0 ? status.ProcessId : null;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
             }
             finally
             {

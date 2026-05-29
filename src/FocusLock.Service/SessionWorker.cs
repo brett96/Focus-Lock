@@ -136,6 +136,7 @@ public class SessionWorker : BackgroundService
             PipeConstants.SetScreenTimeConfig  => BuildReply(await _manager.HandleSetScreenTimeConfigAsync(msg)),
             PipeConstants.GetScreenTimeStatus  => BuildReply(_manager.ScreenTime.HandleGetStatus()),
             PipeConstants.ForceReset           => BuildReply(_manager.HandleForceReset()),
+            PipeConstants.UnlockForSetup       => BuildReply(await _manager.HandleUnlockForSetupAsync()),
             _ => BuildReply(new AckResponse(false, $"Unknown message type: {msg.Type}"))
         };
     }

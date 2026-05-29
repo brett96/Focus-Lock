@@ -228,6 +228,34 @@ public class SessionManager
             : new IsBlockedResponse(false, null, null);
     }
 
+    public async Task<AckResponse> HandleUnlockForSetupAsync()
+    {
+        await _sessionLock.WaitAsync();
+        try
+        {
+            var s = _session;
+            if (s?.Status == SessionStatus.Active)
+            {
+                EndSession(s);
+                return new AckResponse(true, "Active session ended and protection removed.");
+            }
+
+            SessionRepository.Save(null);
+            _session = null;
+            _sessionProtection.TearDownProtection();
+            return new AckResponse(true, "Protection removed.");
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Unlock for setup failed.");
+            return new AckResponse(false, ex.Message);
+        }
+        finally
+        {
+            _sessionLock.Release();
+        }
+    }
+
     public AckResponse HandleForceReset()
     {
         var s = _session;
@@ -274,11 +302,13 @@ public class SessionManager
         _websiteBlocker.Remove(session);
         _blockPageServer.Stop();
 
-        _sessionProtection.Deactivate(session);
-
+        // Persist end before tearing down protection so watchdog/poll loops stop
+        // re-arming critical and see the session as inactive before SCM stops the watchdog.
         session.Status = SessionStatus.Idle;
         SessionRepository.Save(null);
         _session = null;
+
+        _sessionProtection.Deactivate(session);
         _screenTime.OnSessionEnded();
     }
 }

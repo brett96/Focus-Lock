@@ -7,8 +7,7 @@ namespace FocusLock.Service.Blocking;
 /// <summary>
 /// Session protection for all modes (regular and strict):
 ///   1. Service DACLs deny stop/pause/change-config to Administrators and LocalSystem.
-///   2. Both processes are marked critical (taskkill causes bugcheck).
-///   3. Mutual watchdog services restart each other if killed.
+///   2. Mutual watchdog services restart each other if killed.
 ///   4. Poll loops re-apply DACLs if tampered with.
 /// </summary>
 public class SessionProtectionManager(ILogger log)
@@ -19,14 +18,11 @@ public class SessionProtectionManager(ILogger log)
         {
             SessionProtectionHelper.ApplyServiceProtection();
 
-            if (!ProcessProtection.TrySetCritical(true))
-                log.LogWarning("Could not mark main service process as critical.");
-
             if (!WindowsServiceScm.TryStart(FocusLockServiceNames.WatchdogService))
                 log.LogWarning("Watchdog service could not be started; DACL protection still applied.");
 
             log.LogInformation(
-                "Session protection activated (DACL hardening, critical process, watchdog).");
+                "Session protection activated (DACL hardening, watchdog).");
             return new AckResponse(true);
         }
         catch (Exception ex)
@@ -36,12 +32,14 @@ public class SessionProtectionManager(ILogger log)
         }
     }
 
-    public void Deactivate(FocusSession session)
+    public void Deactivate(FocusSession session) => TearDownProtection();
+
+    public void TearDownProtection()
     {
         try
         {
+            ProcessProtection.TrySetCritical(false); // clear legacy critical flag if present
             SessionProtectionHelper.RestoreServiceProtection();
-            ProcessProtection.TrySetCritical(false);
             WindowsServiceScm.TryStop(FocusLockServiceNames.WatchdogService);
             log.LogInformation("Session protection deactivated.");
         }
@@ -50,5 +48,4 @@ public class SessionProtectionManager(ILogger log)
             log.LogError(ex, "Error deactivating session protection.");
         }
     }
-
 }

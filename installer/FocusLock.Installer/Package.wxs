@@ -203,6 +203,18 @@
     </StandardDirectory>
 
     <!-- ── Feature tree ─────────────────────────────────────────────────────── -->
+    <!-- Restore service DACLs before StopServices so uninstall/upgrade can stop protected services. -->
+    <CustomAction Id="UnlockFocusLockForSetup"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="FocusLock.Service.exe --unlock-for-setup"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+
+    <InstallExecuteSequence>
+      <Custom Action="UnlockFocusLockForSetup" Before="StopServices" Condition="Installed" />
+    </InstallExecuteSequence>
+
     <Feature Id="ProductFeature" Title="Focus Lock" Level="1">
       <ComponentGroupRef Id="AppFiles" />
       <ComponentRef Id="ServiceExeComponent" />

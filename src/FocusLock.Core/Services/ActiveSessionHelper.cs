@@ -10,9 +10,26 @@ public static class ActiveSessionHelper
 {
     public static bool IsActiveSession()
     {
+        var session = LoadActiveSession();
+        return session is not null;
+    }
+
+    public static bool IsActiveStrictSession()
+    {
+        var session = LoadActiveSession();
+        return session is not null && session.Mode == SessionMode.Strict;
+    }
+
+    private static FocusSession? LoadActiveSession()
+    {
         var session = SessionRepository.Load();
-        return session is not null
-               && session.Status == SessionStatus.Active
-               && DateTime.UtcNow < session.DeadlineUtc;
+        if (session is null
+            || session.Status != SessionStatus.Active
+            || DateTime.UtcNow >= session.DeadlineUtc)
+        {
+            return null;
+        }
+
+        return session;
     }
 }

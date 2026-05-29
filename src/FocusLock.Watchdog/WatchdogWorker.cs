@@ -4,7 +4,8 @@ namespace FocusLock.Watchdog;
 
 /// <summary>
 /// Restarts FocusLockService when it is killed during any active focus session.
-/// Re-applies service DACLs and marks this process critical while a session is active.
+/// Re-applies service DACLs while a session is active. Does not mark itself critical
+/// (stopping a critical process via SCM causes a system bugcheck).
 /// </summary>
 public sealed class WatchdogWorker : BackgroundService
 {
@@ -23,7 +24,6 @@ public sealed class WatchdogWorker : BackgroundService
                 if (ActiveSessionHelper.IsActiveSession())
                 {
                     SessionProtectionHelper.EnsureServiceProtection();
-                    ProcessProtection.TrySetCritical(true);
 
                     if (!WindowsServiceScm.IsRunning(FocusLockServiceNames.MainService))
                     {
@@ -31,10 +31,6 @@ public sealed class WatchdogWorker : BackgroundService
                         if (!WindowsServiceScm.TryStart(FocusLockServiceNames.MainService))
                             _log.LogError("Failed to restart main Focus Lock service.");
                     }
-                }
-                else
-                {
-                    ProcessProtection.TrySetCritical(false);
                 }
             }
             catch (Exception ex)
