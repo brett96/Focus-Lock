@@ -242,11 +242,20 @@ How it works:
 
 User data in `C:\ProgramData\FocusLock\` is preserved (session/screen-time config components are not removed on upgrade).
 
+### Uninstall and upgrade vs. active sessions
+
+Before stopping services, the MSI runs `FocusLock.Service.exe --unlock-for-setup` (custom action, `Return="check"`).
+
+| Session state | Uninstall / upgrade |
+|---------------|---------------------|
+| **No session** or **Regular** active | Allowed — unlock ends the regular session and removes protection, then services stop. |
+| **Strict** active | **Blocked** — unlock exits with an error and setup/uninstall fails until the deadline passes. |
+
+During any active session, service DACLs deny **stop** to Administrators until unlock succeeds.
+
 ### Uninstall or upgrade fails with “could not be stopped”
 
-During an active focus session, the installer is blocked from stopping `FocusLockService` because service DACLs deny **stop** to Administrators (this is intentional session protection; it is **not** the watchdog being marked critical).
-
-**MSI from a build that includes the unlock custom action** runs `FocusLock.Service.exe --unlock-for-setup` automatically before stopping services.
+If unlock was refused or failed, the installer cannot stop `FocusLockService` (intentional session protection).
 
 If you are stuck on an older build:
 
@@ -257,7 +266,7 @@ If you are stuck on an older build:
 & "C:\Program Files\FocusLock\FocusLock.Service.exe" --unlock-for-setup
 ```
 
-The tool first asks the **running service** (over the named pipe) to end any session and remove protection safely as LocalSystem. That avoids “Access denied” when clearing strict-mode critical flags from an external admin process.
+The tool asks the **running service** (over the named pipe) to end a **regular** session and remove protection. It is **refused** during an active **Strict** session (same rule as the MSI).
 
 If you see **Permission denied** and the PC **blue-screens** when the command exits, an older unlock build tried to **stop a process that was still marked critical** — do not run that old command again. Reboot, deploy the updated `FocusLock.Service.exe`, ensure the **Focus Lock Service** is **Running** in `services.msc`, then run `--unlock-for-setup` once more before uninstalling.
 

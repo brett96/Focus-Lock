@@ -234,6 +234,12 @@ public class SessionManager
         try
         {
             var s = _session;
+            if (s?.Status == SessionStatus.Active && s.Mode == SessionMode.Strict)
+            {
+                return new AckResponse(false,
+                    "Cannot unlock or uninstall while a Strict mode session is active. Wait for the deadline.");
+            }
+
             if (s?.Status == SessionStatus.Active)
             {
                 EndSession(s);

@@ -2,7 +2,7 @@ using FocusLock.Core.Services;
 using FocusLock.Service;
 using Microsoft.Extensions.Hosting.WindowsServices;
 
-if (args is ["--unlock-for-setup"])
+if (args.Contains("--unlock-for-setup"))
 {
     var (ok, message) = SetupUnlock.RunWithDiagnostics();
     Console.WriteLine(message);

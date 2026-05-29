@@ -76,7 +76,7 @@ FocusLock.sln
 
 **Website blocking**: Appends a sentinel block to `C:\Windows\System32\drivers\etc\hosts` with `0.0.0.0 domain.com` entries, then calls `ipconfig /flushdns`. On session end, restores from a backup file.
 
-**Session protection** (`SessionProtectionManager` + `FocusLockWatchdog`): Active for **all** sessions (regular and strict). (1) Service DACLs on both services deny `SERVICE_STOP`, pause, and change-config to **Administrators and LocalSystem**; poll loops re-apply if tampered. (2) **Mutual watchdog** restarts the other service if one dies. On session end, persist `session.json` cleared **before** `Deactivate`. Do **not** use `BreakOnTermination`/critical-process (causes bugcheck if `sc stop` runs while flag is set). Recovery: `scripts/Unlock-StuckServices.ps1` or `--unlock-for-setup`. **Strict mode** additionally: cannot end early from UI; deny-write ACLs on IFEO keys and hosts file.
+**Session protection** (`SessionProtectionManager` + `FocusLockWatchdog`): Active for **all** sessions (regular and strict). (1) Service DACLs on both services deny `SERVICE_STOP`, pause, and change-config to **Administrators and LocalSystem**; poll loops re-apply if tampered. (2) **Mutual watchdog** restarts the other service if one dies. On session end, persist `session.json` cleared **before** `Deactivate`. Do **not** use `BreakOnTermination`/critical-process (causes bugcheck if `sc stop` runs while flag is set). Recovery: `scripts/Unlock-StuckServices.ps1` or `--unlock-for-setup` (refused during active Strict). **Uninstall/upgrade MSI** runs the same unlock before `StopServices` — fails while Strict is active. **Strict mode** additionally: cannot end early from UI; deny-write ACLs on IFEO keys and hosts file.
 
 ### Key files
 
