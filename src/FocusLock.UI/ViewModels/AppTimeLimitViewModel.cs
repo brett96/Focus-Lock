@@ -15,8 +15,12 @@ public class AppTimeLimitViewModel
     public ScreenTimeSchedule? Schedule { get; }
 
     public IRelayCommand RemoveCommand { get; }
+    public IRelayCommand EditCommand { get; }
 
-    public AppTimeLimitViewModel(AppTimeLimit model, Action<AppTimeLimitViewModel> remove)
+    public AppTimeLimitViewModel(
+        AppTimeLimit model,
+        Action<AppTimeLimitViewModel> remove,
+        Action<AppTimeLimitViewModel> edit)
     {
         Id             = model.Id;
         ExeName        = model.ExeName;
@@ -26,6 +30,7 @@ public class AppTimeLimitViewModel
         IntervalMinutes = model.IntervalMinutes;
         Schedule       = model.Schedule;
         RemoveCommand  = new RelayCommand(() => remove(this));
+        EditCommand    = new RelayCommand(() => edit(this));
     }
 
     public string LimitSummary => LimitType == AppLimitType.DailyTotal

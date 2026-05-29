@@ -28,6 +28,17 @@ public partial class ScreenTimeViewModel : ObservableObject
 
     public bool IsNotAddingDaily => !IsAddingDailyLimit;
 
+    private string? _editingDailyLimitId;
+    private string? _editingAppLimitId;
+
+    public string DailyLimitFormTitle =>
+        _editingDailyLimitId is not null ? "Edit Daily Screen Time Limit" : "Add Daily Screen Time Limit";
+    public string DailyLimitFormButtonText => _editingDailyLimitId is not null ? "Save" : "Add";
+    public string AppLimitFormTitle =>
+        _editingAppLimitId is not null ? "Edit App Time Limit" : "Add App Limit";
+    public string AppLimitFormButtonText => _editingAppLimitId is not null ? "Save" : "Add";
+    public bool IsEditingAppLimit => _editingAppLimitId is not null;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasDailyLimitAddError))]
     private string _dailyLimitAddError = string.Empty;
@@ -234,14 +245,79 @@ public partial class ScreenTimeViewModel : ObservableObject
 
         DailyLimits.Clear();
         foreach (var rule in config.DailyLimits)
-            DailyLimits.Add(new DailyTimeLimitViewModel(rule, RemoveDailyLimit));
+            DailyLimits.Add(new DailyTimeLimitViewModel(rule, RemoveDailyLimit, EditDailyLimit));
 
         AppLimits.Clear();
         foreach (var limit in config.AppLimits)
-            AppLimits.Add(new AppTimeLimitViewModel(limit, RemoveAppLimit));
+            AppLimits.Add(new AppTimeLimitViewModel(limit, RemoveAppLimit, EditAppLimit));
     }
 
     private void RemoveDailyLimit(DailyTimeLimitViewModel vm) => DailyLimits.Remove(vm);
+    private void RemoveAppLimit(AppTimeLimitViewModel vm) => AppLimits.Remove(vm);
+
+    private void EditDailyLimit(DailyTimeLimitViewModel vm)
+    {
+        DailyLimitAddError            = string.Empty;
+        _editingDailyLimitId          = vm.Id;
+        IsAddingDailyLimit            = true;
+        (DraftDailyLimitHours, DraftDailyLimitMin) = SplitMinutes(vm.LimitMinutes);
+        _dailyDraftDays               = vm.Schedule.ActiveDays;
+        RefreshDayProps("DailyDraft");
+        DraftDailyUseCustomSchedule = ScreenTimeScheduleHelper.HasTimedWindow(vm.Schedule);
+        if (DraftDailyUseCustomSchedule)
+        {
+            (DailyDraftStartHour, DailyDraftStartMinute, DailyDraftStartAmPm) = ToTimeFields(vm.Schedule.StartTime);
+            (DailyDraftEndHour,   DailyDraftEndMinute,   DailyDraftEndAmPm)   = ToTimeFields(vm.Schedule.EndTime);
+        }
+        NotifyDailyFormChrome();
+    }
+
+    private void EditAppLimit(AppTimeLimitViewModel vm)
+    {
+        AppLimitAddError       = string.Empty;
+        _editingAppLimitId     = vm.Id;
+        IsAddingAppLimit       = true;
+        DraftExeName           = vm.ExeName;
+        DraftDisplayName       = vm.DisplayName;
+        DraftLimitType         = vm.LimitType;
+        if (vm.LimitType == AppLimitType.DailyTotal)
+            (DraftLimitHours, DraftLimitMin) = SplitMinutes(vm.LimitMinutes);
+        else
+        {
+            DraftIntervalLimit  = vm.LimitMinutes.ToString();
+            DraftIntervalPeriod = vm.IntervalMinutes.ToString();
+        }
+        DraftUseCustomSchedule = vm.Schedule is not null;
+        if (vm.Schedule is not null)
+        {
+            _draftDays = vm.Schedule.ActiveDays;
+            RefreshDayProps("Draft");
+            if (ScreenTimeScheduleHelper.HasTimedWindow(vm.Schedule))
+            {
+                (DraftStartHour, DraftStartMinute, DraftStartAmPm) = ToTimeFields(vm.Schedule.StartTime);
+                (DraftEndHour,   DraftEndMinute,   DraftEndAmPm)   = ToTimeFields(vm.Schedule.EndTime);
+            }
+        }
+        else
+        {
+            _draftDays = (DayOfWeekFlags)127;
+            RefreshDayProps("Draft");
+        }
+        NotifyAppFormChrome();
+    }
+
+    private void NotifyDailyFormChrome()
+    {
+        OnPropertyChanged(nameof(DailyLimitFormTitle));
+        OnPropertyChanged(nameof(DailyLimitFormButtonText));
+    }
+
+    private void NotifyAppFormChrome()
+    {
+        OnPropertyChanged(nameof(AppLimitFormTitle));
+        OnPropertyChanged(nameof(AppLimitFormButtonText));
+        OnPropertyChanged(nameof(IsEditingAppLimit));
+    }
 
     private async Task RefreshStatusAsync()
     {
@@ -305,8 +381,9 @@ public partial class ScreenTimeViewModel : ObservableObject
     [RelayCommand]
     private void ShowAddDailyLimit()
     {
-        DailyLimitAddError         = string.Empty;
-        IsAddingDailyLimit         = true;
+        DailyLimitAddError          = string.Empty;
+        _editingDailyLimitId        = null;
+        IsAddingDailyLimit          = true;
         DraftDailyLimitHours       = "2";
         DraftDailyLimitMin         = "0";
         DraftDailyUseCustomSchedule = true;
@@ -314,10 +391,16 @@ public partial class ScreenTimeViewModel : ObservableObject
         RefreshDayProps("DailyDraft");
         DailyDraftStartHour = "9"; DailyDraftStartMinute = "00"; DailyDraftStartAmPm = "AM";
         DailyDraftEndHour   = "5"; DailyDraftEndMinute   = "00"; DailyDraftEndAmPm   = "PM";
+        NotifyDailyFormChrome();
     }
 
     [RelayCommand]
-    private void CancelAddDaily() => IsAddingDailyLimit = false;
+    private void CancelAddDaily()
+    {
+        _editingDailyLimitId = null;
+        IsAddingDailyLimit   = false;
+        NotifyDailyFormChrome();
+    }
 
     [RelayCommand]
     private void AddDailyLimit()
@@ -339,25 +422,38 @@ public partial class ScreenTimeViewModel : ObservableObject
         }
 
         var existing = DailyLimits.Select(d => d.ToModel()).ToList();
-        if (ScreenTimeScheduleOverlap.TryFindDailyLimitOverlap(existing, schedule, out var overlapMsg))
+        if (ScreenTimeScheduleOverlap.TryFindDailyLimitOverlap(
+                existing, schedule, out var overlapMsg, _editingDailyLimitId))
         {
             DailyLimitAddError = overlapMsg!;
             return;
         }
 
-        DailyLimits.Add(new DailyTimeLimitViewModel(new DailyTimeLimit
+        var rule = new DailyTimeLimit
         {
+            Id           = _editingDailyLimitId ?? Guid.NewGuid().ToString("N"),
             LimitMinutes = limitMinutes,
             Schedule     = schedule
-        }, RemoveDailyLimit));
+        };
+
+        if (_editingDailyLimitId is not null)
+        {
+            var old = DailyLimits.FirstOrDefault(d => d.Id == _editingDailyLimitId);
+            if (old is not null) DailyLimits.Remove(old);
+            _editingDailyLimitId = null;
+        }
+
+        DailyLimits.Add(new DailyTimeLimitViewModel(rule, RemoveDailyLimit, EditDailyLimit));
         IsAddingDailyLimit = false;
+        NotifyDailyFormChrome();
     }
 
     [RelayCommand]
     private void ShowAddAppLimit()
     {
-        AppLimitAddError    = string.Empty;
-        IsAddingAppLimit    = true;
+        AppLimitAddError       = string.Empty;
+        _editingAppLimitId     = null;
+        IsAddingAppLimit       = true;
         DraftExeName        = string.Empty;
         DraftDisplayName    = string.Empty;
         DraftLimitType      = AppLimitType.DailyTotal;
@@ -371,10 +467,16 @@ public partial class ScreenTimeViewModel : ObservableObject
         RefreshDayProps("Draft");
         DraftStartHour = "9"; DraftStartMinute = "00"; DraftStartAmPm = "AM";
         DraftEndHour   = "5"; DraftEndMinute   = "00"; DraftEndAmPm   = "PM";
+        NotifyAppFormChrome();
     }
 
     [RelayCommand]
-    private void CancelAdd() => IsAddingAppLimit = false;
+    private void CancelAdd()
+    {
+        _editingAppLimitId = null;
+        IsAddingAppLimit   = false;
+        NotifyAppFormChrome();
+    }
 
     [RelayCommand]
     private void SelectDraftApp(SelectableApp app)
@@ -416,7 +518,7 @@ public partial class ScreenTimeViewModel : ObservableObject
 
         var existing = AppLimits.Select(a => a.ToModel()).ToList();
         if (ScreenTimeScheduleOverlap.TryFindAppLimitOverlap(
-                existing, DraftExeName, candidateSchedule, out var overlapMsg))
+                existing, DraftExeName, candidateSchedule, out var overlapMsg, _editingAppLimitId))
         {
             AppLimitAddError = overlapMsg!;
             return;
@@ -424,6 +526,7 @@ public partial class ScreenTimeViewModel : ObservableObject
 
         var limit = new AppTimeLimit
         {
+            Id              = _editingAppLimitId ?? Guid.NewGuid().ToString("N"),
             ExeName         = DraftExeName,
             DisplayName     = string.IsNullOrWhiteSpace(DraftDisplayName) ? DraftExeName : DraftDisplayName,
             LimitType       = DraftLimitType,
@@ -434,11 +537,17 @@ public partial class ScreenTimeViewModel : ObservableObject
             Schedule        = schedule
         };
 
-        AppLimits.Add(new AppTimeLimitViewModel(limit, RemoveAppLimit));
-        IsAddingAppLimit = false;
-    }
+        if (_editingAppLimitId is not null)
+        {
+            var old = AppLimits.FirstOrDefault(a => a.Id == _editingAppLimitId);
+            if (old is not null) AppLimits.Remove(old);
+            _editingAppLimitId = null;
+        }
 
-    private void RemoveAppLimit(AppTimeLimitViewModel vm) => AppLimits.Remove(vm);
+        AppLimits.Add(new AppTimeLimitViewModel(limit, RemoveAppLimit, EditAppLimit));
+        IsAddingAppLimit = false;
+        NotifyAppFormChrome();
+    }
 
     // ── Builders ──────────────────────────────────────────────────────────────
 

@@ -11,13 +11,18 @@ public class DailyTimeLimitViewModel
     public ScreenTimeSchedule Schedule { get; }
 
     public IRelayCommand RemoveCommand { get; }
+    public IRelayCommand EditCommand { get; }
 
-    public DailyTimeLimitViewModel(DailyTimeLimit model, Action<DailyTimeLimitViewModel> remove)
+    public DailyTimeLimitViewModel(
+        DailyTimeLimit model,
+        Action<DailyTimeLimitViewModel> remove,
+        Action<DailyTimeLimitViewModel> edit)
     {
         Id            = model.Id;
         LimitMinutes  = model.LimitMinutes;
         Schedule      = model.Schedule;
         RemoveCommand = new RelayCommand(() => remove(this));
+        EditCommand   = new RelayCommand(() => edit(this));
     }
 
     public string LimitSummary => FormatMinutes(LimitMinutes);

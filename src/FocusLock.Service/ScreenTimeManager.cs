@@ -34,9 +34,6 @@ public sealed class ScreenTimeManager
         _config     = ScreenTimeConfigRepository.Load();
     }
 
-    // Rule that triggered the current daily lockout (if any).
-    private string? _lockoutRuleId;
-
     // Tracks the "lockout notification was sent for this login" moment.
     private DateTime? _lockoutNotifiedAt;
     // Last observed console session ID; used to detect login transitions.
@@ -140,7 +137,6 @@ public sealed class ScreenTimeManager
             _sessionActive = true;
             _state = new ScreenTimeState { Date = DateOnly.FromDateTime(DateTime.Now) };
             _lockoutNotifiedAt = null;
-            _lockoutRuleId = null;
             _lastSessionId = 0xFFFFFFFF;
             _stateDirty = true;
             _log.LogInformation("Screen time tracking started for focus session.");
@@ -163,7 +159,6 @@ public sealed class ScreenTimeManager
             _state.TotalSecondsUsed = 0;
             _state.DailyRuleUsage.Clear();
             _lockoutNotifiedAt = null;
-            _lockoutRuleId = null;
             _stateDirty = true;
             _lastStatusSnapshot = null;
             ScreenTimeStateRepository.Save(_state);
@@ -264,12 +259,12 @@ public sealed class ScreenTimeManager
 
         var dailyRules = _config.DailyLimits;
         bool enabled = dailyRules.Count > 0;
-        var activeRule = FindActiveDailyLimit(now);
-        bool scheduleActive = activeRule is not null;
-        var schedules = dailyRules.Select(r => r.Schedule).ToList();
-        var usage = activeRule is not null ? GetOrCreateDailyUsage(activeRule.Id) : null;
+        var display = ScreenTimeScheduleHelper.ResolveDailyLimitDisplay(dailyRules, now);
+        var focusRule = display.FocusRule;
+        bool scheduleActive = display.IsActiveNow;
+        var usage = focusRule is not null ? GetOrCreateDailyUsage(focusRule.Id) : null;
 
-        int dailyMinutes = activeRule?.LimitMinutes ?? 0;
+        int dailyMinutes = focusRule?.LimitMinutes ?? 0;
         int totalSeconds = usage?.TotalSecondsUsed ?? 0;
         bool lockedOut = usage?.IsLockedOut == true && scheduleActive;
 
@@ -281,14 +276,16 @@ public sealed class ScreenTimeManager
             statuses,
             DailyHasCustomSchedule: enabled && (dailyRules.Count > 1 || dailyRules.Any(HasNonDefaultDailySchedule)),
             DailyScheduleActiveNow: scheduleActive,
-            DailyScheduleWindowEndedForToday: enabled && !scheduleActive
-                && ScreenTimeScheduleHelper.IsWindowEndedForToday(schedules, now),
-            DailyScheduleLabel: activeRule is not null
-                ? ScreenTimeScheduleHelper.Describe(activeRule.Schedule)
+            DailyScheduleWindowEndedForToday: display.IsLastEndedRuleToday,
+            DailyScheduleLabel: focusRule is not null
+                ? ScreenTimeScheduleHelper.Describe(focusRule.Schedule)
                 : enabled ? $"{dailyRules.Count} scheduled limit{(dailyRules.Count == 1 ? "" : "s")}" : null,
-            DailyScheduleResumesAtLocal: enabled && !scheduleActive
-                ? ScreenTimeScheduleHelper.GetNextActiveStart(schedules, now)
-                : null);
+            DailyScheduleResumesAtLocal: display.IsActiveNow
+                ? null
+                : display.ReferenceTimeLocal ?? ScreenTimeScheduleHelper.GetNextActiveStart(
+                    dailyRules.Select(r => r.Schedule), now),
+            DailyShowingNextRuleToday: display.IsNextRuleToday,
+            DailyShowingLastEndedRuleToday: display.IsLastEndedRuleToday);
     }
 
     private static bool HasNonDefaultDailySchedule(DailyTimeLimit rule)
@@ -375,23 +372,24 @@ public sealed class ScreenTimeManager
         if (!scheduleActive)
         {
             _lockoutNotifiedAt = null;
-            _lockoutRuleId = null;
             foreach (var usage in _state.DailyRuleUsage.Values)
             {
                 if (!usage.IsLockedOut) continue;
                 usage.IsLockedOut = false;
                 _stateDirty = true;
             }
+            _state.IsLockedOutForDay = false;
         }
 
         if (scheduleActive && userActive && activeRule is not null)
         {
             var usage = GetOrCreateDailyUsage(activeRule.Id);
-            usage.TotalSecondsUsed++;
-            _state.TotalSecondsUsed = usage.TotalSecondsUsed;
 
             if (!usage.IsLockedOut)
             {
+                usage.TotalSecondsUsed++;
+                _state.TotalSecondsUsed = usage.TotalSecondsUsed;
+
                 int limitSec = activeRule.LimitMinutes * 60;
                 int remaining = limitSec - usage.TotalSecondsUsed;
                 bool dailyWarn5 = usage.Warned5Min;
@@ -409,42 +407,46 @@ public sealed class ScreenTimeManager
                 if (usage.TotalSecondsUsed >= limitSec)
                 {
                     usage.IsLockedOut = true;
-                    _lockoutRuleId = activeRule.Id;
                     _state.IsLockedOutForDay = true;
                     _stateDirty = true;
                     _log.LogInformation("Daily screen time limit reached ({Min} min).", activeRule.LimitMinutes);
                 }
             }
+            else
+            {
+                EnforceDailyLockoutDisconnect(now, sessionId, activeRule, usage);
+            }
         }
+    }
 
-        if (_lockoutRuleId is not null
-            && scheduleActive
-            && userActive
-            && _state.DailyRuleUsage.TryGetValue(_lockoutRuleId, out var lockoutUsage)
-            && lockoutUsage.IsLockedOut
-            && activeRule?.Id == _lockoutRuleId)
+    private void EnforceDailyLockoutDisconnect(
+        DateTime now,
+        uint sessionId,
+        DailyTimeLimit activeRule,
+        DailyRuleUsageEntry usage)
+    {
+        if (!usage.IsLockedOut)
+            return;
+
+        if (_lockoutNotifiedAt == null)
         {
-            if (_lockoutNotifiedAt == null)
+            _lockoutNotifiedAt = now;
+            var timeStr = FormatMinutes(activeRule.LimitMinutes);
+            _log.LogInformation("Showing daily limit notification and scheduling disconnect.");
+            try
             {
-                _lockoutNotifiedAt = now;
-                var timeStr = FormatMinutes(activeRule!.LimitMinutes);
-                _log.LogInformation("Showing daily limit notification and scheduling disconnect.");
-                try
-                {
-                    _notifier.ShowMessage(
-                        "Focus Lock — Screen Time Limit Reached",
-                        $"Your daily screen time limit of {timeStr} has been reached.\n\nYou will be signed out momentarily.");
-                }
-                catch (Exception ex) { _log.LogDebug(ex, "Failed to show lockout notification."); }
+                _notifier.ShowMessage(
+                    "Focus Lock — Screen Time Limit Reached",
+                    $"Your daily screen time limit of {timeStr} has been reached.\n\nYou will be signed out momentarily.");
             }
-            else if ((now - _lockoutNotifiedAt.Value).TotalSeconds >= 5)
-            {
-                WTSDisconnectSession(IntPtr.Zero, sessionId, false);
-                _log.LogInformation("Disconnected session {Id} (daily screen time limit).", sessionId);
-                _lastSessionId = 0xFFFFFFFF;
-                _lockoutNotifiedAt = null;
-                _lockoutRuleId = null;
-            }
+            catch (Exception ex) { _log.LogDebug(ex, "Failed to show lockout notification."); }
+        }
+        else if ((now - _lockoutNotifiedAt.Value).TotalSeconds >= 5)
+        {
+            WTSDisconnectSession(IntPtr.Zero, sessionId, false);
+            _log.LogInformation("Disconnected session {Id} (daily screen time limit).", sessionId);
+            _lastSessionId = 0xFFFFFFFF;
+            _lockoutNotifiedAt = null;
         }
     }
 

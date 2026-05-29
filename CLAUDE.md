@@ -75,9 +75,17 @@ FocusLock.sln
 | `src/FocusLock.Service/Blocking/StrictModeManager.cs` | Admin account lifecycle (highest-risk code) |
 | `src/FocusLock.Core/Blocking/SystemProcessList.cs` | Shared exclusion list — processes that must never be blocked |
 | `src/FocusLock.Core/Blocking/WebsiteCategories.cs` | Preset domain lists for category blocking on setup |
+| `src/FocusLock.UI/Services/SessionStartConfirmationDialog.cs` | Start-session Yes/No summary dialog (deadline, mode, restrictions) |
 | `src/FocusLock.UI/Services/ServiceClient.cs` | UI-side Named Pipe client wrapper |
 | `src/FocusLock.UI/ViewModels/DashboardViewModel.cs` | Singleton dashboard VM — session countdown, blocks, live screen time |
-| `src/FocusLock.UI/ViewModels/SetupViewModel.cs` | New-session wizard — blocks, categories, screen time, deadline validation |
+| `src/FocusLock.UI/ViewModels/SetupViewModel.cs` | New-session wizard — blocks, categories, screen time add/edit, deadline validation |
+| `src/FocusLock.Core/Models/DailyTimeLimit.cs` | One daily screen-time rule (id, minutes, schedule) |
+| `src/FocusLock.Core/ScreenTime/ScreenTimeScheduleHelper.cs` | Schedule phases, next-start resolution, `ResolveDailyLimitDisplay` for dashboard focus rule |
+| `src/FocusLock.Core/ScreenTime/ScreenTimeScheduleOverlap.cs` | Overlap detection for daily and per-app limit schedules |
+| `src/FocusLock.Core/ScreenTime/DailyLimitDisplayContext.cs` | Which daily rule the dashboard/status should highlight |
+| `src/FocusLock.UI/ViewModels/ScreenTimeViewModel.cs` | Standalone Screen Time settings page — add/edit/remove limits |
+| `src/FocusLock.UI/ViewModels/DailyTimeLimitViewModel.cs` | List row VM for a daily limit (`EditCommand`, delete) |
+| `src/FocusLock.UI/ViewModels/AppTimeLimitViewModel.cs` | List row VM for a per-app limit (`EditCommand`, delete) |
 | `src/FocusLock.UI/Controls/TimePartSpinBox.xaml` | Hour/minute spinners for deadline and schedule times |
 
 ### IPC message types
@@ -104,6 +112,7 @@ Enforced in `SetupViewModel.StartSessionAsync` and `SessionManager.StartSessionA
 - Strict mode requires consent checkbox
 - At least one of: blocked apps, blocked sites, or screen time limits (`StDailyLimits` or `StAppLimits`)
 - Device **daily** screen time limit: minimum **5 minutes** (`ScreenTimeConfig.MinDailyLimitMinutes`); per-app limits are unchanged (still ≥ 1 minute)
+- After validation passes, `SessionStartConfirmationDialog.Show` must return Yes before `SetScreenTimeConfig` / `StartSession` IPC runs
 
 Default deadline on setup page: **now + 1 hour**. `DatePicker` uses `DisplayDateEnd = Today + 1 year`.
 
@@ -120,13 +129,17 @@ Pages: `DashboardPage` (primary idle/active UI), `SetupPage` (wizard), `ActiveSe
 
 **Screen Time enforcement**: `ScreenTimeManager` tracks multiple `DailyLimits` (each with its own schedule and per-rule usage in `DailyRuleUsage`). At most one daily rule is active at any instant; overlap is prevented at setup. Per-app limits use rule `Id` for state; same app may have multiple non-overlapping limits.
 
+**Screen time limit editing** (`SetupViewModel`, `ScreenTimeViewModel`): list rows use `DailyTimeLimitViewModel` / `AppTimeLimitViewModel` with `EditCommand` + delete callback. Edit sets `_editingDailyLimitId` / `_editingAppLimitId`, opens the add form pre-filled, and switches form title/button to “Edit …” / “Save”. Save preserves the existing rule `Id`. Overlap checks pass `excludeId` so the rule being edited does not conflict with itself. XAML: Edit button left of delete on `SetupPage` and `ScreenTimePage`.
+
+**Screen time dashboard**: `GetScreenTimeStatus` includes schedule phase fields (`DailyScheduleActiveNow`, `DailyScheduleWindowEndedForToday`, `DailyScheduleResumesAtLocal`, `DailyShowingNextRuleToday`, `DailyShowingLastEndedRuleToday`). `ScreenTimeScheduleHelper.ResolveDailyLimitDisplay` picks which daily rule to surface in status/UI. Priority: (1) rule active now, (2) next timed window later today, (3) last ended window today (`ReferenceTimeLocal` = end time), (4) next start on a future day. Enforcement in `ScreenTimeManager` still uses whichever rule is active at the current instant. Daily accumulation, lockout, and disconnect only run inside the active window; when a window ends, lockout clears and the UI reflects that limits are no longer in effect.
+
 **End session early**: `MessageBox` Yes/No, then `RequestEndSessionUntilAcknowledgedAsync` (up to 3 IPC attempts) and `WaitForSessionIdleAsync` (poll `GetSessionInfo` until idle, re-send `EndSession` if still active). Timers paused while ending. `ActiveSessionViewModel` still has a simpler end path if that page is used.
+
+**Start session confirm** (`SessionStartConfirmationDialog`): After setup validation in `StartSessionAsync`, a Yes/No dialog summarizes end date/time, Regular vs Strict mode, and bullet lists for blocked apps, sites, daily limits, and app limits. Cancel returns to the wizard without IPC.
 
 **Service reachability UI**: `ServiceClient.SendAsync` retries (`IpcRetryAttempts` / `IpcRetryDelayMs`). Dashboard requires **3** consecutive failed session polls before `IsServiceUnreachable`; a successful `GetStatus` or `GetScreenTimeStatus` clears the streak. Pipe `MaxConnections` = 16 for UI + BlockerStub bursts.
 
 **Named pipe security** (`PipeSecurityHelper`): ACL allows `LocalSystem`, `BuiltinAdministrators`, and `AuthenticatedUser` (for `BlockerStub` / `IsBlocked` as standard user). **No `WorldSid`.** Privileged message types (`StartSession`, `EndSession`, `SetScreenTimeConfig`, `ForceReset`) require an admin token on the client connection (`ImpersonateNamedPipeClient`). IPC reads use a **3s** timeout (`PipeConstants.IpcReadTimeoutSeconds`) to prevent connection-slot exhaustion.
-
-**Screen time dashboard**: `GetScreenTimeStatus` includes schedule phase fields (`DailyScheduleActiveNow`, `DailyScheduleWindowEndedForToday`, `DailyScheduleResumesAtLocal`). Daily limit enforcement (accumulation, lockout, disconnect) only runs inside the configured window; when the window ends, lockout is cleared and the UI shows that limits are no longer in effect.
 
 **Screen time warnings**: Service toasts at **5** and **1** minutes remaining for daily total and per-app limits (`MaybeNotifyRemaining`; skip 5‑min warning if limit &lt; 5 minutes).
 

@@ -55,7 +55,9 @@ public record ScreenTimeStatusResponse(
     bool DailyScheduleActiveNow = true,
     bool DailyScheduleWindowEndedForToday = false,
     string? DailyScheduleLabel = null,
-    DateTime? DailyScheduleResumesAtLocal = null);
+    DateTime? DailyScheduleResumesAtLocal = null,
+    bool DailyShowingNextRuleToday = false,
+    bool DailyShowingLastEndedRuleToday = false);
 
 public record AppUsageStatus(
     string ExeName,

@@ -48,6 +48,42 @@ public class ScreenTimeScheduleOverlapTests
     }
 
     [Fact]
+    public void ResolveDailyLimitDisplay_ShowsNextRuleBetweenWindows()
+    {
+        var rules = new List<DailyTimeLimit>
+        {
+            new()
+            {
+                LimitMinutes = 120,
+                Schedule = new ScreenTimeSchedule
+                {
+                    ActiveDays = DayOfWeekFlags.Monday,
+                    StartTime  = new TimeOnly(9, 0),
+                    EndTime    = new TimeOnly(12, 0)
+                }
+            },
+            new()
+            {
+                LimitMinutes = 60,
+                Schedule = new ScreenTimeSchedule
+                {
+                    ActiveDays = DayOfWeekFlags.Monday,
+                    StartTime  = new TimeOnly(13, 0),
+                    EndTime    = new TimeOnly(17, 0)
+                }
+            }
+        };
+
+        var monday1230 = new DateTime(2026, 5, 25, 12, 30, 0); // Monday
+        var ctx = ScreenTimeScheduleHelper.ResolveDailyLimitDisplay(rules, monday1230);
+
+        Assert.False(ctx.IsActiveNow);
+        Assert.True(ctx.IsNextRuleToday);
+        Assert.Equal(60, ctx.FocusRule!.LimitMinutes);
+        Assert.Equal(new DateTime(2026, 5, 25, 13, 0, 0), ctx.ReferenceTimeLocal);
+    }
+
+    [Fact]
     public void AllDayOnSharedDay_OverlapsTimedWindow()
     {
         var a = new ScreenTimeSchedule { ActiveDays = DayOfWeekFlags.Monday };

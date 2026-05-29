@@ -234,14 +234,23 @@ public partial class DashboardViewModel : ObservableObject
                     ? "Daily limit tracking active now"
                     : string.Empty;
             }
+            else if (status.DailyShowingNextRuleToday)
+            {
+                DailyRemainingText = FormatDailyStartsAt(status.DailyScheduleResumesAtLocal);
+                DailyScheduleStatusText = "Next daily limit window";
+                DailyProgress = limitSec > 0
+                    ? Math.Min(1.0, status.TotalSecondsUsedToday / (double)limitSec)
+                    : 0;
+            }
+            else if (status.DailyShowingLastEndedRuleToday)
+            {
+                DailyRemainingText = "Not in effect — today's windows complete";
+                DailyScheduleStatusText = FormatDailyLastEnded(status.DailyScheduleResumesAtLocal);
+            }
             else
             {
-                DailyRemainingText = status.DailyScheduleWindowEndedForToday
-                    ? "Not in effect — today's window ended"
-                    : FormatDailyRemainingPaused(status.DailyScheduleResumesAtLocal);
-                DailyScheduleStatusText = status.DailyScheduleWindowEndedForToday
-                    ? "Daily limit not in effect — today's window has ended"
-                    : FormatDailyScheduleInactive(status.DailyScheduleResumesAtLocal);
+                DailyRemainingText = FormatDailyRemainingPaused(status.DailyScheduleResumesAtLocal);
+                DailyScheduleStatusText = FormatDailyScheduleInactive(status.DailyScheduleResumesAtLocal);
             }
         }
         else
@@ -446,6 +455,24 @@ public partial class DashboardViewModel : ObservableObject
         if (t.TotalMinutes >= 1)
             return $"{(int)t.TotalMinutes}m";
         return $"{t.Seconds}s";
+    }
+
+    private static string FormatDailyStartsAt(DateTime? startsAtLocal)
+    {
+        if (startsAtLocal is not { } at)
+            return "Starts later today";
+
+        return at.Date == DateTime.Today
+            ? $"Starts at {at:h:mm tt}"
+            : $"Starts {at:ddd h:mm tt}";
+    }
+
+    private static string FormatDailyLastEnded(DateTime? endedAtLocal)
+    {
+        if (endedAtLocal is not { } at)
+            return "Last daily limit window ended";
+
+        return $"Last window ended at {at:h:mm tt}";
     }
 
     private static string FormatDailyRemainingPaused(DateTime? resumesAtLocal)

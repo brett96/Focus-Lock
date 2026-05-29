@@ -71,6 +71,72 @@ public static class ScreenTimeScheduleHelper
     public static bool IsWindowEndedForToday(IEnumerable<ScreenTimeSchedule> schedules, DateTime localNow)
         => schedules.Any(s => GetPhase(s, localNow) == DailySchedulePhase.AfterWindowToday);
 
+    public static bool IsDayActive(ScreenTimeSchedule schedule, DayOfWeek dayOfWeek)
+        => IsDayFlagActive(schedule.ActiveDays, dayOfWeek);
+
+    /// <summary>
+    /// Picks which daily limit the dashboard should highlight: active now, next on today, or last ended today.
+    /// </summary>
+    public static DailyLimitDisplayContext ResolveDailyLimitDisplay(
+        IReadOnlyList<DailyTimeLimit> rules,
+        DateTime localNow)
+    {
+        if (rules.Count == 0)
+            return new DailyLimitDisplayContext(null, false, false, false, null);
+
+        var active = rules.FirstOrDefault(r => IsEnforcementActive(r.Schedule, localNow));
+        if (active is not null)
+            return new DailyLimitDisplayContext(active, true, false, false, null);
+
+        var todayRules = rules.Where(r => IsDayActive(r.Schedule, localNow.DayOfWeek)).ToList();
+
+        DailyTimeLimit? nextRule = null;
+        DateTime? nextStartToday = null;
+        foreach (var rule in todayRules)
+        {
+            if (GetPhase(rule.Schedule, localNow) != DailySchedulePhase.BeforeWindowToday)
+                continue;
+            if (!HasTimedWindow(rule.Schedule))
+                continue;
+
+            var start = localNow.Date + rule.Schedule.StartTime!.Value.ToTimeSpan();
+            if (start <= localNow)
+                continue;
+
+            if (nextStartToday is null || start < nextStartToday)
+            {
+                nextStartToday = start;
+                nextRule = rule;
+            }
+        }
+
+        if (nextRule is not null)
+            return new DailyLimitDisplayContext(nextRule, false, true, false, nextStartToday);
+
+        DailyTimeLimit? lastEnded = null;
+        DateTime? lastEnd = null;
+        foreach (var rule in todayRules)
+        {
+            if (GetPhase(rule.Schedule, localNow) != DailySchedulePhase.AfterWindowToday)
+                continue;
+            if (!HasTimedWindow(rule.Schedule))
+                continue;
+
+            var end = localNow.Date + rule.Schedule.EndTime!.Value.ToTimeSpan();
+            if (lastEnd is null || end > lastEnd)
+            {
+                lastEnd = end;
+                lastEnded = rule;
+            }
+        }
+
+        if (lastEnded is not null)
+            return new DailyLimitDisplayContext(lastEnded, false, false, true, lastEnd);
+
+        var schedules = rules.Select(r => r.Schedule);
+        return new DailyLimitDisplayContext(null, false, false, false, GetNextActiveStart(schedules, localNow));
+    }
+
     /// <summary>Next local time the schedule becomes active (null if active now).</summary>
     public static DateTime? GetNextActiveStart(ScreenTimeSchedule schedule, DateTime localNow)
     {
@@ -99,7 +165,7 @@ public static class ScreenTimeScheduleHelper
         return null;
     }
 
-    private static bool IsDayActive(ScreenTimeSchedule schedule, DayOfWeek dayOfWeek)
+    private static bool IsDayFlagActive(DayOfWeekFlags activeDays, DayOfWeek dayOfWeek)
     {
         var flag = dayOfWeek switch
         {
@@ -112,7 +178,7 @@ public static class ScreenTimeScheduleHelper
             DayOfWeek.Sunday    => DayOfWeekFlags.Sunday,
             _                   => DayOfWeekFlags.None
         };
-        return (schedule.ActiveDays & flag) != 0;
+        return (activeDays & flag) != 0;
     }
 
     private static string DescribeDays(DayOfWeekFlags f)

@@ -22,17 +22,17 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
     3. **Hosts file ACL** — the hosts file gets a deny-write ACL for `Administrators`, preventing the sentinel block from being manually removed. The service retains full control so it can restore the file on session end.
   - The user keeps their admin rights for all other purposes — no risk of being locked out of their own machine.
 - **Screen Time Limits** *(optional; enforced only during an active Focus Lock session)*
-  - Limits are configured in the **New Focus Session** wizard (or saved ahead of time) and **only apply while a focus session is running** — same lifecycle as app/website blocking. When the session ends, counters reset and enforcement stops.
-  - **Daily screen time limit** — maximum logged-in time during the session. You can add **multiple daily limits** with different day/time schedules (e.g. weekdays 9–5 vs. Saturday morning). Overlapping schedules are rejected at setup.
+  - Limits are configured in the **New Focus Session** wizard or on the **Screen Time** settings page (saved ahead of time) and **only apply while a focus session is running** — same lifecycle as app/website blocking. When the session ends, counters reset and enforcement stops.
+  - **Daily screen time limit** — maximum logged-in time during the session. You can add **multiple daily limits** with different day/time schedules (e.g. weekdays 9–5 vs. Saturday morning). Overlapping daily schedules are rejected at setup. Each limit row has **Edit** and **Delete**; Edit loads the limit into the form and **Save** preserves its ID.
   - **Schedule-based activation** — limits can be restricted to specific days of the week and/or a time-of-day window (e.g. Monday–Friday 9 AM–5 PM). Outside the schedule window, limits do not accumulate or enforce.
-  - **Per-app time limits** — each app can have its own limit and optional schedule (defaults to always on). These do **not** inherit the device daily-limit schedule unless you set a per-app schedule.
+  - **Per-app time limits** — each app can have its own limit and optional schedule (defaults to always on). These do **not** inherit the device daily-limit schedule unless you set a per-app schedule. Multiple limits for the same app are allowed when their schedules do not overlap. Each row supports **Edit** and **Delete** like daily limits.
     - *Daily Total*: at most X minutes of use within the app's schedule window during the session.
     - *Interval*: at most X minutes per Y-minute interval within the app's schedule window.
   - Usage is tracked while the app's process is running (or in the foreground). The dashboard polls the service every second during an active session.
   - **Website categories** — block preset groups of sites (Adult, Entertainment, Social, etc.) from the session setup screen.
   - Configuration persists in `C:\ProgramData\FocusLock\screen-time-config.json`. Usage counters are session-scoped (reset when a session starts and cleared when it ends).
   - During an active session, the **dashboard** shows live countdowns for the session deadline, screen-time usage, remaining quota per limit, interval-reset times for interval-based app limits, and scrollable lists of blocked apps/sites.
-  - When the daily limit uses a **schedule window**, the dashboard shows that window and whether tracking is active now; outside the window, the remaining-time line shows when tracking resumes.
+  - When the daily limit uses a **schedule window**, the dashboard shows that window and whether tracking is active now. With **multiple daily limits on the same day**, the dashboard highlights one rule at a time: the **currently active** window first; if none is active, the **next upcoming** window today (“Next daily limit window” / “Starts at …”); if all of today’s windows have ended, the **most recently ended** window (“Last window ended at …”). Outside any window, the remaining-time line shows when tracking resumes.
   - **Warning toasts** at 5 and 1 minutes remaining for the daily total and per-app limits (5‑minute warning skipped if the limit is under 5 minutes).
   - When a screen-time-limited app is blocked, or a site is blocked over HTTP, the user gets a **native notification** (via `BlockerStub` and `IsBlockedResponse.BlockMessage`).
 - **Session setup (New Focus Session wizard)**
@@ -40,7 +40,9 @@ Focus Lock is a **Windows self-parental-control app**: you start a timed “focu
   - End date must be **at least 5 minutes** in the future and **no more than one year** ahead (enforced in UI and service).
   - **Blocked apps and websites are optional** if you enable a daily screen-time limit and/or add per-app time limits.
   - **Website categories** — preset domain groups (Adult, Entertainment, Social, etc.) can be toggled on the setup screen.
+  - **Screen time limits** — add, **edit**, or remove daily and per-app limits in the wizard; overlap validation runs on add/save (the rule being edited is excluded from the check).
   - At least one restriction is required to start: blocked apps, blocked sites, or screen time limits.
+  - **Start Session** shows a Yes/No confirmation listing the session end date/time, mode (Regular or Strict), and every active restriction (blocked apps, blocked websites, daily screen time limits, and app time limits) before the session is sent to the service.
 - **Dashboard UX**
   - Main active-session view is `DashboardPage` (not `ActiveSessionPage`).
   - **End Session Early** (regular mode only) shows a Yes/No confirmation, then the same ending progress UI until the session is fully idle.

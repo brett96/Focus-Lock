@@ -139,11 +139,16 @@
                                     <TextBlock Text="{Binding ScheduleSummary, Mode=OneWay}"
                                                Foreground="#6C7086" FontSize="12" Margin="0,2,0,0"/>
                                 </StackPanel>
-                                <Button Content="✕" HorizontalAlignment="Right"
-                                        Command="{Binding RemoveCommand}"
-                                        Background="Transparent" Foreground="#F38BA8"
-                                        BorderThickness="0" Cursor="Hand" FontSize="14"
-                                        VerticalAlignment="Center" Padding="8,0"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <Button Content="Edit" Command="{Binding EditCommand}"
+                                            Background="Transparent" Foreground="#89B4FA"
+                                            BorderThickness="0" Cursor="Hand" FontSize="12"
+                                            Padding="8,0" Margin="0,0,4,0"/>
+                                    <Button Content="✕" Command="{Binding RemoveCommand}"
+                                            Background="Transparent" Foreground="#F38BA8"
+                                            BorderThickness="0" Cursor="Hand" FontSize="14"
+                                            Padding="8,0"/>
+                                </StackPanel>
                             </Grid>
                         </Border>
                     </DataTemplate>
@@ -159,7 +164,7 @@
             <Border Background="#313244" CornerRadius="8" Padding="18,16" Margin="0,0,0,24"
                     Visibility="{Binding IsAddingDailyLimit, Converter={StaticResource BoolToVisibility}}">
                 <StackPanel>
-                    <TextBlock Text="Add Daily Screen Time Limit" FontSize="15" FontWeight="SemiBold"
+                    <TextBlock Text="{Binding DailyLimitFormTitle}" FontSize="15" FontWeight="SemiBold"
                                Foreground="#CDD6F4" Margin="0,0,0,14"/>
 
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12" VerticalAlignment="Center">
@@ -230,7 +235,7 @@
                                Visibility="{Binding HasDailyLimitAddError, Converter={StaticResource BoolToVisibility}}"/>
 
                     <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                        <Button Content="Add" Command="{Binding AddDailyLimitCommand}"
+                        <Button Content="{Binding DailyLimitFormButtonText}" Command="{Binding AddDailyLimitCommand}"
                                 Style="{StaticResource PrimaryButton}"/>
                         <Button Content="Cancel" Command="{Binding CancelAddDailyCommand}"
                                 Style="{StaticResource DangerButton}"/>
@@ -257,11 +262,16 @@
                                         <Run Text="{Binding ScheduleSummary, Mode=OneWay}"/>
                                     </TextBlock>
                                 </StackPanel>
-                                <Button Content="✕" HorizontalAlignment="Right"
-                                        Command="{Binding RemoveCommand}"
-                                        Background="Transparent" Foreground="#F38BA8"
-                                        BorderThickness="0" Cursor="Hand" FontSize="14"
-                                        VerticalAlignment="Center" Padding="8,0"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <Button Content="Edit" Command="{Binding EditCommand}"
+                                            Background="Transparent" Foreground="#89B4FA"
+                                            BorderThickness="0" Cursor="Hand" FontSize="12"
+                                            Padding="8,0" Margin="0,0,4,0"/>
+                                    <Button Content="✕" Command="{Binding RemoveCommand}"
+                                            Background="Transparent" Foreground="#F38BA8"
+                                            BorderThickness="0" Cursor="Hand" FontSize="14"
+                                            Padding="8,0"/>
+                                </StackPanel>
                             </Grid>
                         </Border>
                     </DataTemplate>
@@ -279,7 +289,7 @@
             <Border Background="#313244" CornerRadius="8" Padding="18,16" Margin="0,0,0,24"
                     Visibility="{Binding IsAddingAppLimit, Converter={StaticResource BoolToVisibility}}">
                 <StackPanel>
-                    <TextBlock Text="Add App Limit" FontSize="15" FontWeight="SemiBold"
+                    <TextBlock Text="{Binding AppLimitFormTitle}" FontSize="15" FontWeight="SemiBold"
                                Foreground="#CDD6F4" Margin="0,0,0,14"/>
 
                     <!-- App picker -->
@@ -457,7 +467,7 @@
                                Visibility="{Binding HasAppLimitAddError, Converter={StaticResource BoolToVisibility}}"/>
 
                     <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                        <Button Content="Add" Command="{Binding AddAppLimitCommand}"
+                        <Button Content="{Binding AppLimitFormButtonText}" Command="{Binding AddAppLimitCommand}"
                                 Style="{StaticResource PrimaryButton}"/>
                         <Button Content="Cancel" Command="{Binding CancelAddCommand}"
                                 Style="{StaticResource DangerButton}"/>

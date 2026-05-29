@@ -102,6 +102,17 @@ public partial class SetupViewModel : ObservableObject
 
     public bool StIsNotAddingDaily => !StIsAddingDailyLimit;
 
+    private string? _stEditingDailyLimitId;
+    private string? _stEditingAppLimitId;
+
+    public string StDailyLimitFormTitle =>
+        _stEditingDailyLimitId is not null ? "Edit Daily Screen Time Limit" : "Add Daily Screen Time Limit";
+    public string StDailyLimitFormButtonText => _stEditingDailyLimitId is not null ? "Save" : "Add";
+    public string StAppLimitFormTitle =>
+        _stEditingAppLimitId is not null ? "Edit App Time Limit" : "Add App Time Limit";
+    public string StAppLimitFormButtonText => _stEditingAppLimitId is not null ? "Save" : "Add";
+    public bool StIsEditingAppLimit => _stEditingAppLimitId is not null;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasStDailyLimitAddError))]
     private string _stDailyLimitAddError = string.Empty;
@@ -318,15 +329,88 @@ public partial class SetupViewModel : ObservableObject
 
         StDailyLimits.Clear();
         foreach (var rule in config.DailyLimits)
-            StDailyLimits.Add(new DailyTimeLimitViewModel(rule, StRemoveDailyLimit));
+            StDailyLimits.Add(new DailyTimeLimitViewModel(rule, StRemoveDailyLimit, StEditDailyLimit));
 
         StAppLimits.Clear();
         foreach (var limit in config.AppLimits)
-            StAppLimits.Add(new AppTimeLimitViewModel(limit, StRemoveAppLimit));
+            StAppLimits.Add(new AppTimeLimitViewModel(limit, StRemoveAppLimit, StEditAppLimit));
     }
 
     private void StRemoveDailyLimit(DailyTimeLimitViewModel vm) => StDailyLimits.Remove(vm);
     private void StRemoveAppLimit(AppTimeLimitViewModel vm) => StAppLimits.Remove(vm);
+
+    private void StEditDailyLimit(DailyTimeLimitViewModel vm)
+    {
+        StDailyLimitAddError        = string.Empty;
+        _stEditingDailyLimitId      = vm.Id;
+        StIsAddingDailyLimit          = true;
+        (StDraftDailyLimitHours, StDraftDailyLimitMin) = StSplitMinutes(vm.LimitMinutes);
+        _stDailyDraftDays           = vm.Schedule.ActiveDays;
+        StRefreshDayProps("StDailyDraft");
+        StDraftDailyUseCustomSchedule = ScreenTimeScheduleHelper.HasTimedWindow(vm.Schedule);
+        if (StDraftDailyUseCustomSchedule)
+        {
+            (StDailyDraftStartHour, StDailyDraftStartMinute, StDailyDraftStartAmPm) =
+                StToTimeFields(vm.Schedule.StartTime);
+            (StDailyDraftEndHour, StDailyDraftEndMinute, StDailyDraftEndAmPm) =
+                StToTimeFields(vm.Schedule.EndTime);
+        }
+        else
+        {
+            StDailyDraftStartHour = "9"; StDailyDraftStartMinute = "00"; StDailyDraftStartAmPm = "AM";
+            StDailyDraftEndHour   = "5"; StDailyDraftEndMinute   = "00"; StDailyDraftEndAmPm   = "PM";
+        }
+        NotifyDailyFormChrome();
+    }
+
+    private void StEditAppLimit(AppTimeLimitViewModel vm)
+    {
+        StAppLimitAddError     = string.Empty;
+        _stEditingAppLimitId   = vm.Id;
+        StIsAddingAppLimit       = true;
+        StDraftExeName           = vm.ExeName;
+        StDraftDisplayName       = vm.DisplayName;
+        StDraftLimitType         = vm.LimitType;
+        if (vm.LimitType == AppLimitType.DailyTotal)
+        {
+            (StDraftLimitHours, StDraftLimitMin) = StSplitMinutes(vm.LimitMinutes);
+        }
+        else
+        {
+            StDraftIntervalLimit  = vm.LimitMinutes.ToString();
+            StDraftIntervalPeriod = vm.IntervalMinutes.ToString();
+        }
+        StDraftUseCustomSchedule = vm.Schedule is not null;
+        if (vm.Schedule is not null)
+        {
+            _stDraftDays = vm.Schedule.ActiveDays;
+            StRefreshDayProps("StDraft");
+            if (ScreenTimeScheduleHelper.HasTimedWindow(vm.Schedule))
+            {
+                (StDraftStartHour, StDraftStartMinute, StDraftStartAmPm) = StToTimeFields(vm.Schedule.StartTime);
+                (StDraftEndHour,   StDraftEndMinute,   StDraftEndAmPm)   = StToTimeFields(vm.Schedule.EndTime);
+            }
+        }
+        else
+        {
+            _stDraftDays = (DayOfWeekFlags)127;
+            StRefreshDayProps("StDraft");
+        }
+        NotifyAppFormChrome();
+    }
+
+    private void NotifyDailyFormChrome()
+    {
+        OnPropertyChanged(nameof(StDailyLimitFormTitle));
+        OnPropertyChanged(nameof(StDailyLimitFormButtonText));
+    }
+
+    private void NotifyAppFormChrome()
+    {
+        OnPropertyChanged(nameof(StAppLimitFormTitle));
+        OnPropertyChanged(nameof(StAppLimitFormButtonText));
+        OnPropertyChanged(nameof(StIsEditingAppLimit));
+    }
 
     // ── Focus Lock commands ───────────────────────────────────────────────────
 
@@ -457,6 +541,15 @@ public partial class SetupViewModel : ObservableObject
             return;
         }
 
+        if (!SessionStartConfirmationDialog.Show(
+                deadline,
+                SelectedMode,
+                BlockedApps.ToList(),
+                BlockedSites.ToList(),
+                StDailyLimits.ToList(),
+                StAppLimits.ToList()))
+            return;
+
         IsBusy = true;
         try
         {
@@ -494,8 +587,9 @@ public partial class SetupViewModel : ObservableObject
     [RelayCommand]
     private void StShowAddDailyLimit()
     {
-        StDailyLimitAddError       = string.Empty;
-        StIsAddingDailyLimit         = true;
+        StDailyLimitAddError          = string.Empty;
+        _stEditingDailyLimitId        = null;
+        StIsAddingDailyLimit          = true;
         StDraftDailyLimitHours       = "2";
         StDraftDailyLimitMin         = "0";
         StDraftDailyUseCustomSchedule = true;
@@ -503,10 +597,16 @@ public partial class SetupViewModel : ObservableObject
         StRefreshDayProps("StDailyDraft");
         StDailyDraftStartHour = "9"; StDailyDraftStartMinute = "00"; StDailyDraftStartAmPm = "AM";
         StDailyDraftEndHour   = "5"; StDailyDraftEndMinute   = "00"; StDailyDraftEndAmPm   = "PM";
+        NotifyDailyFormChrome();
     }
 
     [RelayCommand]
-    private void StCancelAddDaily() => StIsAddingDailyLimit = false;
+    private void StCancelAddDaily()
+    {
+        _stEditingDailyLimitId = null;
+        StIsAddingDailyLimit   = false;
+        NotifyDailyFormChrome();
+    }
 
     [RelayCommand]
     private void StAddDailyLimit()
@@ -528,7 +628,8 @@ public partial class SetupViewModel : ObservableObject
         }
 
         var existing = StDailyLimits.Select(d => d.ToModel()).ToList();
-        if (ScreenTimeScheduleOverlap.TryFindDailyLimitOverlap(existing, schedule, out var overlapMsg))
+        if (ScreenTimeScheduleOverlap.TryFindDailyLimitOverlap(
+                existing, schedule, out var overlapMsg, _stEditingDailyLimitId))
         {
             StDailyLimitAddError = overlapMsg!;
             return;
@@ -536,18 +637,29 @@ public partial class SetupViewModel : ObservableObject
 
         var rule = new DailyTimeLimit
         {
+            Id           = _stEditingDailyLimitId ?? Guid.NewGuid().ToString("N"),
             LimitMinutes = limitMinutes,
             Schedule     = schedule
         };
-        StDailyLimits.Add(new DailyTimeLimitViewModel(rule, StRemoveDailyLimit));
+
+        if (_stEditingDailyLimitId is not null)
+        {
+            var old = StDailyLimits.FirstOrDefault(d => d.Id == _stEditingDailyLimitId);
+            if (old is not null) StDailyLimits.Remove(old);
+            _stEditingDailyLimitId = null;
+        }
+
+        StDailyLimits.Add(new DailyTimeLimitViewModel(rule, StRemoveDailyLimit, StEditDailyLimit));
         StIsAddingDailyLimit = false;
+        NotifyDailyFormChrome();
     }
 
     [RelayCommand]
     private void StShowAddAppLimit()
     {
-        StAppLimitAddError    = string.Empty;
-        StIsAddingAppLimit    = true;
+        StAppLimitAddError     = string.Empty;
+        _stEditingAppLimitId   = null;
+        StIsAddingAppLimit     = true;
         StDraftExeName        = string.Empty;
         StDraftDisplayName    = string.Empty;
         StDraftLimitType      = AppLimitType.DailyTotal;
@@ -561,10 +673,16 @@ public partial class SetupViewModel : ObservableObject
         StRefreshDayProps("StDraft");
         StDraftStartHour = "9"; StDraftStartMinute = "00"; StDraftStartAmPm = "AM";
         StDraftEndHour   = "5"; StDraftEndMinute   = "00"; StDraftEndAmPm   = "PM";
+        NotifyAppFormChrome();
     }
 
     [RelayCommand]
-    private void StCancelAdd() => StIsAddingAppLimit = false;
+    private void StCancelAdd()
+    {
+        _stEditingAppLimitId = null;
+        StIsAddingAppLimit   = false;
+        NotifyAppFormChrome();
+    }
 
     [RelayCommand]
     private void StSelectDraftApp(SelectableApp app)
@@ -606,7 +724,7 @@ public partial class SetupViewModel : ObservableObject
 
         var existing = StAppLimits.Select(a => a.ToModel()).ToList();
         if (ScreenTimeScheduleOverlap.TryFindAppLimitOverlap(
-                existing, StDraftExeName, candidateSchedule, out var overlapMsg))
+                existing, StDraftExeName, candidateSchedule, out var overlapMsg, _stEditingAppLimitId))
         {
             StAppLimitAddError = overlapMsg!;
             return;
@@ -614,6 +732,7 @@ public partial class SetupViewModel : ObservableObject
 
         var limit = new AppTimeLimit
         {
+            Id              = _stEditingAppLimitId ?? Guid.NewGuid().ToString("N"),
             ExeName         = StDraftExeName,
             DisplayName     = string.IsNullOrWhiteSpace(StDraftDisplayName) ? StDraftExeName : StDraftDisplayName,
             LimitType       = StDraftLimitType,
@@ -624,8 +743,16 @@ public partial class SetupViewModel : ObservableObject
             Schedule        = schedule
         };
 
-        StAppLimits.Add(new AppTimeLimitViewModel(limit, StRemoveAppLimit));
+        if (_stEditingAppLimitId is not null)
+        {
+            var old = StAppLimits.FirstOrDefault(a => a.Id == _stEditingAppLimitId);
+            if (old is not null) StAppLimits.Remove(old);
+            _stEditingAppLimitId = null;
+        }
+
+        StAppLimits.Add(new AppTimeLimitViewModel(limit, StRemoveAppLimit, StEditAppLimit));
         StIsAddingAppLimit = false;
+        NotifyAppFormChrome();
     }
 
     // ── Builders ──────────────────────────────────────────────────────────────
